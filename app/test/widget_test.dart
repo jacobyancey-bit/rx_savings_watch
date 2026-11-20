@@ -1,30 +1,59 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:rx_savings_watch/main.dart';
+import 'package:rx_savings_watch/models/pricing_info.dart';
+import 'package:rx_savings_watch/widgets/savings_badge.dart';
+import 'package:rx_savings_watch/widgets/signal_badges.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('Widget Tests', () {
+    testWidgets('SignalBadges displays 2-Signal Verified when both satisfied', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SignalBadges(
+              hasApprovedGeneric: true,
+              commercialGenericAvailable: true,
+              compact: true,
+            ),
+          ),
+        ),
+      );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+      expect(find.text('2-Signal Verified'), findsOneWidget);
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    testWidgets('SignalBadges displays Brand Only when neither satisfied', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SignalBadges(
+              hasApprovedGeneric: false,
+              commercialGenericAvailable: false,
+              compact: true,
+            ),
+          ),
+        ),
+      );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+      expect(find.text('Brand Only'), findsOneWidget);
+    });
+
+    testWidgets('SavingsBadge renders percentage savings correctly', (tester) async {
+      final pricing = PricingInfo(
+        brandNadacUnitPrice: 10.0,
+        genericNadacUnitPrice: 1.0,
+        estimatedSavingsPct: 90.0,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SavingsBadge(pricing: pricing),
+          ),
+        ),
+      );
+
+      expect(find.text('Save 90%'), findsOneWidget);
+    });
   });
 }

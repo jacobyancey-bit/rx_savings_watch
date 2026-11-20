@@ -1,6 +1,8 @@
 .env
 .env.*
 node_modules/
-server/data/
+server/data/*.db
+server/data/*.db-*
+server/data/*.sqlite
 *.db
 *.sqlite

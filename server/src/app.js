@@ -2,14 +2,19 @@ const express = require('express');
 const cors = require('cors');
 const { createCheckUpdatesRouter } = require('./routes/checkUpdates');
 const { createDrugsRouter } = require('./routes/drugs');
+const { createSchedulerRouter } = require('./routes/scheduler');
+const { IngestionScheduler } = require('./scheduler');
 
 /**
  * Create and configure Express application
  * @param {import('node:sqlite').DatabaseSync} db
+ * @param {object} [options]
+ * @param {IngestionScheduler} [options.scheduler]
  * @returns {express.Application}
  */
-function createApp(db) {
+function createApp(db, options = {}) {
   const app = express();
+  const scheduler = options.scheduler || new IngestionScheduler(db);
 
   // Basic middleware
   app.use(cors());
@@ -30,6 +35,7 @@ function createApp(db) {
   // API Routes
   app.use('/api', createCheckUpdatesRouter(db));
   app.use('/api', createDrugsRouter(db));
+  app.use('/api', createSchedulerRouter(scheduler));
 
   // Error handling middleware
   app.use((err, req, res, next) => {

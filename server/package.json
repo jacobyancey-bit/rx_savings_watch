@@ -1,10 +1,11 @@
 {
   "name": "rx_savings_watch_server",
   "version": "1.0.0",
-  "description": "Rx Savings Watch Server - Phase 1 generic launch detection engine and API",
+  "description": "Rx Savings Watch Server - Generic launch detection engine, ingestion daemon, and API",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
+    "daemon": "node scripts/run-daemon.js",
     "test": "node --test tests/*.test.js",
     "backtest": "node scripts/backtest.js",
     "ingest": "node scripts/run-ingestion.js",

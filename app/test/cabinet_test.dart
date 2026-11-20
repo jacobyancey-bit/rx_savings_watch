@@ -2,12 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rx_savings_watch/models/drug.dart';
 import 'package:rx_savings_watch/providers/cabinet_provider.dart';
 import 'package:rx_savings_watch/services/api_service.dart';
+import 'package:rx_savings_watch/services/notification_service.dart';
 import 'package:rx_savings_watch/services/storage_service.dart';
 
 class MockStorageService extends StorageService {
   List<Drug> storedCabinet = [];
   String? storedLastChecked;
   String? storedUrl;
+  bool allowLaunch = true;
+  bool allowShortage = true;
 
   @override
   Future<List<Drug>> loadCabinet() async => List.from(storedCabinet);
@@ -31,6 +34,22 @@ class MockStorageService extends StorageService {
   @override
   Future<void> saveCustomServerUrl(String url) async {
     storedUrl = url;
+  }
+
+  @override
+  Future<bool> getAllowLaunchNotifications() async => allowLaunch;
+
+  @override
+  Future<void> setAllowLaunchNotifications(bool allow) async {
+    allowLaunch = allow;
+  }
+
+  @override
+  Future<bool> getAllowShortageNotifications() async => allowShortage;
+
+  @override
+  Future<void> setAllowShortageNotifications(bool allow) async {
+    allowShortage = allow;
   }
 }
 
@@ -67,12 +86,42 @@ class MockApiService extends ApiService {
   }
 }
 
+class MockNotificationService extends NotificationService {
+  bool launchNotified = false;
+  bool shortageNotified = false;
+
+  @override
+  Future<void> showGenericLaunchNotification({
+    required String drugName,
+    String? genericName,
+    double? savingsPct,
+  }) async {
+    launchNotified = true;
+  }
+
+  @override
+  Future<void> showShortageNotification({
+    required String drugName,
+    required String reason,
+  }) async {
+    shortageNotified = true;
+  }
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('CabinetProvider Tests', () {
-    test('Adds and removes drugs with state notifications', () async {
+    test('Adds and removes drugs with state notifications and triggers alert', () async {
       final mockStorage = MockStorageService();
       final mockApi = MockApiService();
-      final provider = CabinetProvider(storageService: mockStorage, apiService: mockApi);
+      final mockNotifs = MockNotificationService();
+
+      final provider = CabinetProvider(
+        storageService: mockStorage,
+        apiService: mockApi,
+        notificationService: mockNotifs,
+      );
 
       // Wait for provider _init
       await Future.delayed(const Duration(milliseconds: 50));
@@ -95,6 +144,9 @@ void main() {
       final updatedVyvanse = provider.cabinet.first;
       expect(updatedVyvanse.commercialGenericAvailable, true);
       expect(updatedVyvanse.pricing?.estimatedSavingsPct, 93.2);
+
+      // Verify notification was triggered
+      expect(mockNotifs.launchNotified, true);
 
       // Verify summary calculations
       expect(provider.genericLaunchedCount, 1);

@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart';
 import '../models/drug.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import '../services/storage_service.dart';
 
 class CabinetProvider extends ChangeNotifier {
   final StorageService _storageService;
+  final NotificationService _notificationService;
   late ApiService _apiService;
 
   List<Drug> _cabinet = [];
@@ -13,12 +15,16 @@ class CabinetProvider extends ChangeNotifier {
   String? _lastChecked;
   String? _syncError;
   int _lastNewAlertsCount = 0;
+  bool _allowLaunchNotifs = true;
+  bool _allowShortageNotifs = true;
 
   CabinetProvider({
     StorageService? storageService,
     ApiService? apiService,
+    NotificationService? notificationService,
   })  : _storageService = storageService ?? StorageService(),
-        _apiService = apiService ?? ApiService() {
+        _apiService = apiService ?? ApiService(),
+        _notificationService = notificationService ?? NotificationService() {
     _init();
   }
 
@@ -29,6 +35,8 @@ class CabinetProvider extends ChangeNotifier {
   String? get syncError => _syncError;
   int get lastNewAlertsCount => _lastNewAlertsCount;
   String get serverUrl => _apiService.baseUrl;
+  bool get allowLaunchNotifs => _allowLaunchNotifs;
+  bool get allowShortageNotifs => _allowShortageNotifs;
 
   int get genericLaunchedCount =>
       _cabinet.where((d) => d.commercialGenericAvailable).length;
@@ -58,6 +66,9 @@ class CabinetProvider extends ChangeNotifier {
       _apiService = ApiService(baseUrl: customUrl);
     }
 
+    _allowLaunchNotifs = await _storageService.getAllowLaunchNotifications();
+    _allowShortageNotifs = await _storageService.getAllowShortageNotifications();
+
     _cabinet = await _storageService.loadCabinet();
     _lastChecked = await _storageService.getLastCheckedTimestamp();
     _isLoading = false;
@@ -72,6 +83,18 @@ class CabinetProvider extends ChangeNotifier {
   Future<void> setServerUrl(String url) async {
     await _storageService.saveCustomServerUrl(url);
     _apiService = ApiService(baseUrl: url);
+    notifyListeners();
+  }
+
+  Future<void> setAllowLaunchNotifs(bool allow) async {
+    _allowLaunchNotifs = allow;
+    await _storageService.setAllowLaunchNotifications(allow);
+    notifyListeners();
+  }
+
+  Future<void> setAllowShortageNotifs(bool allow) async {
+    _allowShortageNotifs = allow;
+    await _storageService.setAllowShortageNotifications(allow);
     notifyListeners();
   }
 
@@ -123,7 +146,31 @@ class CabinetProvider extends ChangeNotifier {
         }
 
         if (match != null) {
-          updatedCabinet.add(existing.copyWithUpdate(match));
+          final wasCommercial = existing.commercialGenericAvailable;
+          final wasShortage = existing.hasActiveShortage;
+
+          final updated = existing.copyWithUpdate(match);
+          updatedCabinet.add(updated);
+
+          // Check if newly commercialized -> trigger notification
+          if (!wasCommercial && updated.commercialGenericAvailable && _allowLaunchNotifs) {
+            await _notificationService.showGenericLaunchNotification(
+              drugName: updated.displayName,
+              genericName: updated.genericName,
+              savingsPct: updated.pricing?.estimatedSavingsPct,
+            );
+          }
+
+          // Check if newly entered shortage -> trigger notification
+          if (!wasShortage && updated.hasActiveShortage && _allowShortageNotifs) {
+            final reason = updated.activeShortageDetails.isNotEmpty && updated.activeShortageDetails[0]['reason'] != null
+                ? updated.activeShortageDetails[0]['reason'] as String
+                : 'Demand increase or manufacturing delay';
+            await _notificationService.showShortageNotification(
+              drugName: updated.displayName,
+              reason: reason,
+            );
+          }
         } else {
           updatedCabinet.add(existing);
         }

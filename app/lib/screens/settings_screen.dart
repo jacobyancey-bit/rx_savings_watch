@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -45,9 +46,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _sendTestNotification() async {
+    final notifs = NotificationService();
+    await notifs.showGenericLaunchNotification(
+      drugName: 'Vyvanse (Test)',
+      genericName: 'lisdexamfetamine dimesylate',
+      savingsPct: 93.0,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Test notification dispatched to device')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cabinet = context.watch<CabinetProvider>();
 
     return Scaffold(
       appBar: AppBar(
@@ -91,6 +107,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Notification Preferences
+          Text(
+            'Notification Alerts',
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Commercial Generic Launch Alerts'),
+            subtitle: const Text('Notify when FDA approval + commercial market distribution are verified'),
+            value: cabinet.allowLaunchNotifs,
+            onChanged: (val) => cabinet.setAllowLaunchNotifs(val),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('FDA Drug Shortage Warnings'),
+            subtitle: const Text('Notify if a watched prescription enters an active supply shortage'),
+            value: cabinet.allowShortageNotifs,
+            onChanged: (val) => cabinet.setAllowShortageNotifs(val),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _sendTestNotification,
+            icon: const Icon(Icons.notifications_active_outlined),
+            label: const Text('Send Test Alert Notification'),
           ),
 
           const SizedBox(height: 28),

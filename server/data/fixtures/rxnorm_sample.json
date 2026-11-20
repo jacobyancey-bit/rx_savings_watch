@@ -1,0 +1,52 @@
+[
+  {
+    "rxcui": "855333",
+    "brand_name": "Vyvanse",
+    "generic_name": "lisdexamfetamine dimesylate",
+    "active_ingredient": "lisdexamfetamine dimesylate",
+    "dosage_form": "oral capsule",
+    "strength": "30 mg",
+    "route": "oral",
+    "drug_type": "small_molecule"
+  },
+  {
+    "rxcui": "1364430",
+    "brand_name": "Eliquis",
+    "generic_name": "apixaban",
+    "active_ingredient": "apixaban",
+    "dosage_form": "oral tablet",
+    "strength": "5 mg",
+    "route": "oral",
+    "drug_type": "small_molecule"
+  },
+  {
+    "rxcui": "327361",
+    "brand_name": "Humira",
+    "generic_name": "adalimumab",
+    "active_ingredient": "adalimumab",
+    "dosage_form": "subcutaneous injection",
+    "strength": "40 mg/0.8 mL",
+    "route": "subcutaneous",
+    "drug_type": "biologic"
+  },
+  {
+    "rxcui": "1545653",
+    "brand_name": "Jardiance",
+    "generic_name": "empagliflozin",
+    "active_ingredient": "empagliflozin",
+    "dosage_form": "oral tablet",
+    "strength": "25 mg",
+    "route": "oral",
+    "drug_type": "small_molecule"
+  },
+  {
+    "rxcui": "617316",
+    "brand_name": "Truvada",
+    "generic_name": "emtricitabine and tenofovir disoproxil fumarate",
+    "active_ingredient": "emtricitabine / tenofovir disoproxil fumarate",
+    "dosage_form": "oral tablet",
+    "strength": "200 mg / 300 mg",
+    "route": "oral",
+    "drug_type": "small_molecule"
+  }
+]

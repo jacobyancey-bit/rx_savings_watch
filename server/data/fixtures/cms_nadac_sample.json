@@ -1,0 +1,74 @@
+[
+  {
+    "rxcui": "855333",
+    "ndc": "59417-0102-10",
+    "description": "VYVANSE 30 MG CAPSULE (Brand)",
+    "nadac_per_unit": 12.85,
+    "effective_date": "2023-01-04",
+    "pricing_unit": "EA"
+  },
+  {
+    "rxcui": "855333",
+    "ndc": "00378-6170-01",
+    "description": "LISDEXAMFETAMINE DIMESYLATE 30 MG CAPSULE",
+    "nadac_per_unit": 0.88,
+    "effective_date": "2023-08-30",
+    "pricing_unit": "EA"
+  },
+  {
+    "rxcui": "855333",
+    "ndc": "47781-0631-01",
+    "description": "LISDEXAMFETAMINE DIMESYLATE 30 MG CAPSULE",
+    "nadac_per_unit": 0.92,
+    "effective_date": "2023-09-06",
+    "pricing_unit": "EA"
+  },
+  {
+    "rxcui": "1364430",
+    "ndc": "00069-0851-20",
+    "description": "ELIQUIS 5 MG TABLET",
+    "nadac_per_unit": 8.52,
+    "effective_date": "2023-05-17",
+    "pricing_unit": "EA"
+  },
+  {
+    "rxcui": "327361",
+    "ndc": "00074-3799-02",
+    "description": "HUMIRA 40 MG/0.8 ML SYRINGE (Brand)",
+    "nadac_per_unit": 3462.50,
+    "effective_date": "2022-12-28",
+    "pricing_unit": "ML"
+  },
+  {
+    "rxcui": "327361",
+    "ndc": "55513-0824-02",
+    "description": "AMJEVITA (ADALIMUMAB-ATTO) 40 MG/0.8 ML AUTOINJ",
+    "nadac_per_unit": 1558.00,
+    "effective_date": "2023-02-08",
+    "pricing_unit": "ML"
+  },
+  {
+    "rxcui": "1545653",
+    "ndc": "00597-0153-30",
+    "description": "JARDIANCE 25 MG TABLET",
+    "nadac_per_unit": 19.45,
+    "effective_date": "2023-06-21",
+    "pricing_unit": "EA"
+  },
+  {
+    "rxcui": "617316",
+    "ndc": "61958-0701-1",
+    "description": "TRUVADA TABLET (Brand)",
+    "nadac_per_unit": 62.30,
+    "effective_date": "2020-01-15",
+    "pricing_unit": "EA"
+  },
+  {
+    "rxcui": "617316",
+    "ndc": "00093-7848-56",
+    "description": "EMTRICITABINE-TENOFOVIR DISOPROXIL FUMARATE",
+    "nadac_per_unit": 3.15,
+    "effective_date": "2020-10-07",
+    "pricing_unit": "EA"
+  }
+]

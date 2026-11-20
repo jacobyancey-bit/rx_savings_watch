@@ -1,0 +1,20 @@
+[
+  {
+    "rxcui": "855333",
+    "generic_name": "lisdexamfetamine dimesylate",
+    "dosage_form": "oral capsule",
+    "status": "Current",
+    "reason": "Demand increase and manufacturing delay",
+    "shortage_start_date": "2023-09-15",
+    "shortage_resolved_date": null
+  },
+  {
+    "rxcui": "327361",
+    "generic_name": "adalimumab",
+    "dosage_form": "subcutaneous injection",
+    "status": "Resolved",
+    "reason": "Manufacturing capacity resolved",
+    "shortage_start_date": "2022-03-01",
+    "shortage_resolved_date": "2022-08-15"
+  }
+]

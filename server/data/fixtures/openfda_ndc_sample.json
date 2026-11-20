@@ -1,0 +1,83 @@
+[
+  {
+    "rxcui": "855333",
+    "ndc": "00378-6170-01",
+    "labeler_name": "Mylan Pharmaceuticals Inc.",
+    "marketing_category": "ANDA",
+    "marketing_start_date": "2023-08-30",
+    "is_commercialized": 1,
+    "package_description": "100 CAPSULE in 1 BOTTLE"
+  },
+  {
+    "rxcui": "855333",
+    "ndc": "47781-0631-01",
+    "labeler_name": "Alvogen, Inc.",
+    "marketing_category": "ANDA",
+    "marketing_start_date": "2023-08-30",
+    "is_commercialized": 1,
+    "package_description": "100 CAPSULE in 1 BOTTLE"
+  },
+  {
+    "rxcui": "855333",
+    "ndc": "59417-0102-10",
+    "labeler_name": "Shire US Inc. (Brand)",
+    "marketing_category": "NDA",
+    "marketing_start_date": "2007-07-16",
+    "is_commercialized": 1,
+    "package_description": "100 CAPSULE in 1 BOTTLE"
+  },
+  {
+    "rxcui": "1364430",
+    "ndc": "00069-0851-20",
+    "labeler_name": "Bristol-Myers Squibb / Pfizer (Brand)",
+    "marketing_category": "NDA",
+    "marketing_start_date": "2013-01-08",
+    "is_commercialized": 1,
+    "package_description": "60 TABLET in 1 BOTTLE"
+  },
+  {
+    "rxcui": "327361",
+    "ndc": "55513-0824-02",
+    "labeler_name": "Amgen Inc. (Amjevita Biosimilar)",
+    "marketing_category": "BLA",
+    "marketing_start_date": "2023-01-31",
+    "is_commercialized": 1,
+    "package_description": "2 AUTO-INJECTOR in 1 CARTON"
+  },
+  {
+    "rxcui": "327361",
+    "ndc": "00074-3799-02",
+    "labeler_name": "AbbVie Inc. (Humira Brand)",
+    "marketing_category": "BLA",
+    "marketing_start_date": "2003-01-30",
+    "is_commercialized": 1,
+    "package_description": "2 SYRINGE in 1 CARTON"
+  },
+  {
+    "rxcui": "1545653",
+    "ndc": "00597-0153-30",
+    "labeler_name": "Boehringer Ingelheim Pharmaceuticals (Brand)",
+    "marketing_category": "NDA",
+    "marketing_start_date": "2014-08-18",
+    "is_commercialized": 1,
+    "package_description": "30 TABLET in 1 BOTTLE"
+  },
+  {
+    "rxcui": "617316",
+    "ndc": "00093-7848-56",
+    "labeler_name": "Teva Pharmaceuticals USA, Inc.",
+    "marketing_category": "ANDA",
+    "marketing_start_date": "2020-10-02",
+    "is_commercialized": 1,
+    "package_description": "30 TABLET in 1 BOTTLE"
+  },
+  {
+    "rxcui": "617316",
+    "ndc": "61958-0701-1",
+    "labeler_name": "Gilead Sciences, Inc. (Brand)",
+    "marketing_category": "NDA",
+    "marketing_start_date": "2004-08-02",
+    "is_commercialized": 1,
+    "package_description": "30 TABLET in 1 BOTTLE"
+  }
+]

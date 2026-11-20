@@ -1,0 +1,121 @@
+[
+  {
+    "id": "scenario_vyvanse",
+    "rxcui": "855333",
+    "brand_name": "Vyvanse",
+    "generic_name": "lisdexamfetamine dimesylate",
+    "expected_result": "commercial_generic_launch",
+    "expected_approval_date": "2023-08-25",
+    "expected_commercial_date": "2023-08-30",
+    "expected_lag_days": 5,
+    "expected_savings_pct_min": 85,
+    "timeline": [
+      {
+        "date": "2023-01-01",
+        "action": "brand_baseline",
+        "description": "Only brand Shire US is on market with NADAC price $12.85"
+      },
+      {
+        "date": "2023-08-25",
+        "action": "fda_approvals",
+        "description": "FDA approves ANDA210046, ANDA212876, ANDA213962. Signal 1 active, but market verification pending."
+      },
+      {
+        "date": "2023-08-30",
+        "action": "market_commercialization",
+        "description": "CMS NADAC posts $0.88/unit pricing for Mylan NDC. Signal 2 verified! 2-Signal detector triggers."
+      }
+    ]
+  },
+  {
+    "id": "scenario_eliquis",
+    "rxcui": "1364430",
+    "brand_name": "Eliquis",
+    "generic_name": "apixaban",
+    "expected_result": "no_launch",
+    "description": "Patent litigation prevents commercial market launch. Tentative or litigation-bound approvals with no US commercial market distribution.",
+    "timeline": [
+      {
+        "date": "2019-12-23",
+        "action": "tentative_approval",
+        "description": "FDA signs tentative approval / settlement under patent expiry 2028. No commercial launch allowed."
+      },
+      {
+        "date": "2023-11-20",
+        "action": "market_check",
+        "description": "No generic NDCs commercialized, zero generic NADAC pricing in US market. Detector must report zero false positives."
+      }
+    ]
+  },
+  {
+    "id": "scenario_humira",
+    "rxcui": "327361",
+    "brand_name": "Humira",
+    "generic_name": "adalimumab",
+    "expected_result": "commercial_generic_launch",
+    "expected_approval_date": "2016-09-23",
+    "expected_commercial_date": "2023-01-31",
+    "expected_lag_days": 2321,
+    "expected_savings_pct_min": 45,
+    "timeline": [
+      {
+        "date": "2016-09-23",
+        "action": "fda_approval",
+        "description": "Amgen Amjevita BLA761024 approved. Signal 1 active."
+      },
+      {
+        "date": "2022-12-31",
+        "action": "patent_settlement_wait",
+        "description": "Years of delay due to patent settlements. Zero commercial distribution in US."
+      },
+      {
+        "date": "2023-01-31",
+        "action": "commercial_launch",
+        "description": "Amjevita launched commercially. Signal 2 verified! Commercial generic/biosimilar launch triggered."
+      }
+    ]
+  },
+  {
+    "id": "scenario_jardiance",
+    "rxcui": "1545653",
+    "brand_name": "Jardiance",
+    "generic_name": "empagliflozin",
+    "expected_result": "no_launch",
+    "description": "Brand-only SGLT2 inhibitor. No commercial generic market entry.",
+    "timeline": [
+      {
+        "date": "2020-05-14",
+        "action": "tentative_approval",
+        "description": "Zydus ANDA214502 tentative approval. Not approved for commercial launch until 2029."
+      },
+      {
+        "date": "2024-01-01",
+        "action": "brand_only_check",
+        "description": "Only Boehringer Ingelheim brand distributed. Must NOT fire false positive."
+      }
+    ]
+  },
+  {
+    "id": "scenario_truvada",
+    "rxcui": "617316",
+    "brand_name": "Truvada",
+    "generic_name": "emtricitabine and tenofovir disoproxil fumarate",
+    "expected_result": "commercial_generic_launch",
+    "expected_approval_date": "2017-06-08",
+    "expected_commercial_date": "2020-10-02",
+    "expected_lag_days": 1212,
+    "expected_savings_pct_min": 90,
+    "timeline": [
+      {
+        "date": "2017-06-08",
+        "action": "fda_approval",
+        "description": "Teva ANDA091650 approved. Signal 1 active."
+      },
+      {
+        "date": "2020-10-02",
+        "action": "commercial_launch",
+        "description": "Teva launches generic emtricitabine/tenofovir commercially. Signal 2 verified!"
+      }
+    ]
+  }
+]

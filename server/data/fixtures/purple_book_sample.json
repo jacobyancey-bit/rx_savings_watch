@@ -1,0 +1,29 @@
+[
+  {
+    "rxcui": "327361",
+    "application_number": "BLA761024",
+    "applicant": "AMGEN INC",
+    "approval_date": "2016-09-23",
+    "is_approved_generic": 1,
+    "biosimilar_status": "biosimilar",
+    "reference_product_id": "BLA125057"
+  },
+  {
+    "rxcui": "327361",
+    "application_number": "BLA761058",
+    "applicant": "BOEHRINGER INGELHEIM",
+    "approval_date": "2017-08-25",
+    "is_approved_generic": 1,
+    "biosimilar_status": "interchangeable",
+    "reference_product_id": "BLA125057"
+  },
+  {
+    "rxcui": "327361",
+    "application_number": "BLA761071",
+    "applicant": "SANDOZ INC",
+    "approval_date": "2018-10-30",
+    "is_approved_generic": 1,
+    "biosimilar_status": "biosimilar",
+    "reference_product_id": "BLA125057"
+  }
+]

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -20,18 +19,17 @@ class ApiService {
   ApiService({String? baseUrl})
       : _configuredBaseUrl = baseUrl ?? defaultBaseUrl;
 
+  static const String productionBaseUrl = 'https://rx-savings-server-production.up.railway.app';
+
   static String get defaultBaseUrl {
     if (kIsWeb) {
       final origin = Uri.base.origin;
       if (origin.startsWith('http://') || origin.startsWith('https://')) {
         return origin;
       }
-      return 'http://localhost:3000';
+      return productionBaseUrl;
     }
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:3000';
-    }
-    return 'http://localhost:3000';
+    return productionBaseUrl;
   }
 
   String get baseUrl => _configuredBaseUrl;

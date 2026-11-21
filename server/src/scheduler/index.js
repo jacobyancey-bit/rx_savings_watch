@@ -1,5 +1,6 @@
 const { runAllIngestions, ingestFdaShortages, ingestCmsNadac } = require('../ingestion');
 const { GenericLaunchDetector } = require('../detector');
+const { broadcastPublicAlert } = require('../services/webPush');
 
 /**
  * Ingestion Scheduler & Post-Ingestion Launch Detection Pipeline
@@ -50,6 +51,19 @@ class IngestionScheduler {
 
       const newLaunches = detectionResults.filter(r => r.launch_detected && r.alert_created);
       console.log(`[Scheduler ${new Date().toISOString()}] Cycle finished. ${newLaunches.length} new commercial generic launch alerts created.`);
+
+      // Broadcast anonymous public launch signals to Web Push subscribers (filtered locally on each device)
+      if (process.env.NODE_ENV !== 'test') {
+        for (const launch of newLaunches) {
+          broadcastPublicAlert(this.db, {
+            type: 'generic_launch',
+            rxcui: launch.rxcui,
+            brand_name: launch.brand_name || launch.generic_name,
+            generic_name: launch.generic_name,
+            savings_pct: launch.savings?.savingsPct ?? null,
+          }).catch(err => console.error('[Scheduler] Web Push broadcast error:', err.message));
+        }
+      }
 
       return {
         ingestion: ingestionResults,

@@ -8,6 +8,7 @@ const config = require('./config');
 const { createCheckUpdatesRouter } = require('./routes/checkUpdates');
 const { createDrugsRouter } = require('./routes/drugs');
 const { createSchedulerRouter } = require('./routes/scheduler');
+const { createPushRouter } = require('./routes/push');
 const { IngestionScheduler } = require('./scheduler');
 
 /**
@@ -81,6 +82,7 @@ function createApp(db, options = {}) {
   app.use('/api', createCheckUpdatesRouter(db));
   app.use('/api', createDrugsRouter(db));
   app.use('/api', createSchedulerRouter(scheduler));
+  app.use('/api', createPushRouter(db));
 
   // Catch-all 404 for unknown /api/* routes (prevents info leakage)
   app.use('/api', (req, res) => {

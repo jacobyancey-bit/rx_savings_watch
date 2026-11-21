@@ -3,6 +3,7 @@ import '../models/drug.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
+import '../services/web_push_service.dart';
 
 class CabinetProvider extends ChangeNotifier {
   final StorageService _storageService;
@@ -80,6 +81,7 @@ class CabinetProvider extends ChangeNotifier {
 
     _cabinet = await _storageService.loadCabinet();
     _lastChecked = await _storageService.getLastCheckedTimestamp();
+    await WebPushService.syncWatchedRxcuis(_cabinet.map((d) => d.rxcui).toList());
     _isLoading = false;
     notifyListeners();
 
@@ -129,6 +131,7 @@ class CabinetProvider extends ChangeNotifier {
     _syncError = null;
     _lastNewAlertsCount = 0;
     await _storageService.clearAllLocalData();
+    await WebPushService.syncWatchedRxcuis(const []);
     notifyListeners();
   }
 
@@ -137,6 +140,7 @@ class CabinetProvider extends ChangeNotifier {
 
     _cabinet.add(drug);
     await _storageService.saveCabinet(_cabinet);
+    await WebPushService.syncWatchedRxcuis(_cabinet.map((d) => d.rxcui).toList());
     notifyListeners();
 
     // Trigger sync for this new drug
@@ -146,6 +150,7 @@ class CabinetProvider extends ChangeNotifier {
   Future<void> removeDrug(String rxcui) async {
     _cabinet.removeWhere((d) => d.rxcui == rxcui);
     await _storageService.saveCabinet(_cabinet);
+    await WebPushService.syncWatchedRxcuis(_cabinet.map((d) => d.rxcui).toList());
     notifyListeners();
   }
 

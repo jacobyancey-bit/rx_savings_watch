@@ -116,6 +116,23 @@ CREATE TABLE IF NOT EXISTS data_flags (
 );
 
 CREATE INDEX IF NOT EXISTS idx_data_flags_rxcui ON data_flags(rxcui, issue_type);
+
+-- 7. App Metadata Table (stores auto-generated VAPID keys persistently on volume)
+CREATE TABLE IF NOT EXISTS app_metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 8. Anonymous Web Push Subscriptions (Zero PII: stores ONLY browser push endpoint & keys, NEVER drug lists)
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint TEXT UNIQUE NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
 CREATE INDEX IF NOT EXISTS idx_shortages_generic ON drug_shortages(generic_name);
 
 -- 5. Alert Events Table: Detected commercial generic launches, price drops, and shortages

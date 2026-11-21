@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -5,6 +6,7 @@ import '../config/partner_links.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import '../services/web_push_service.dart';
 import '../widgets/privacy_promise_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -18,12 +20,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _urlController;
   bool _isTesting = false;
   bool? _pingSuccess;
+  String _webPushStatus = 'unsupported';
+  bool _webPushBusy = false;
 
   @override
   void initState() {
     super.initState();
     final currentUrl = context.read<CabinetProvider>().serverUrl;
     _urlController = TextEditingController(text: currentUrl);
+    if (kIsWeb) {
+      WebPushService.getStatus().then((status) {
+        if (mounted) setState(() => _webPushStatus = status);
+      });
+    }
+  }
+
+  Future<void> _toggleWebPush() async {
+    setState(() => _webPushBusy = true);
+    final cabinet = context.read<CabinetProvider>();
+    final nextStatus = _webPushStatus == 'subscribed'
+        ? await WebPushService.unsubscribe(cabinet.serverUrl)
+        : await WebPushService.subscribe(cabinet.serverUrl);
+
+    if (nextStatus == 'subscribed') {
+      await WebPushService.syncWatchedRxcuis(cabinet.cabinet.map((d) => d.rxcui).toList());
+    }
+
+    if (mounted) {
+      setState(() {
+        _webPushStatus = nextStatus;
+        _webPushBusy = false;
+      });
+      final msg = switch (nextStatus) {
+        'subscribed' => 'Browser alerts enabled! Filtered privately on this device.',
+        'unsubscribed' => 'Browser alerts turned off.',
+        'denied' => 'Browser blocked notifications. Enable them in your browser address bar settings.',
+        _ => 'Could not update browser alert status.',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
   }
 
   Future<void> _testConnection() async {
@@ -50,6 +85,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _sendTestNotification() async {
+    if (kIsWeb) {
+      final ok = await WebPushService.showLocalTestNotification();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              ok
+                  ? 'Test browser notification sent!'
+                  : 'Please allow notifications in your browser to receive alerts.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     final notifs = NotificationService();
     await notifs.showGenericLaunchNotification(
       drugName: 'Vyvanse (Test)',
@@ -177,10 +228,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (val) => cabinet.setAllowShortageNotifs(val),
           ),
           const SizedBox(height: 8),
+          if (kIsWeb && _webPushStatus != 'unsupported') ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _webPushStatus == 'subscribed'
+                        ? 'Browser Push Alerts: ON'
+                        : 'Get Automatic Browser Alerts (No Login)',
+                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Get notified even when this tab is closed. Your medicine list stays only in this browser and filters alerts locally.',
+                    style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant, height: 1.35),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 48,
+                    child: FilledButton.icon(
+                      onPressed: _webPushBusy ? null : _toggleWebPush,
+                      icon: Icon(
+                        _webPushStatus == 'subscribed'
+                            ? Icons.notifications_off_outlined
+                            : Icons.notifications_active_outlined,
+                      ),
+                      label: Text(
+                        _webPushStatus == 'subscribed'
+                            ? 'Turn Off Browser Alerts'
+                            : 'Turn On Browser Alerts',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           OutlinedButton.icon(
             onPressed: _sendTestNotification,
             icon: const Icon(Icons.notifications_active_outlined),
-            label: const Text('Send Test Alert Notification'),
+            label: Text(kIsWeb ? 'Send Test Browser Notification' : 'Send Test Alert Notification'),
           ),
 
           const SizedBox(height: 28),

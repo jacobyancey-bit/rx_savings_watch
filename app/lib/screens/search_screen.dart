@@ -5,6 +5,7 @@ import '../models/drug.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
 import '../services/bottle_scanner_service.dart';
+import 'drug_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -381,13 +382,18 @@ class _SearchScreenState extends State<SearchScreen> {
 
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => DrugDetailScreen(drug: drug)),
+            );
+          },
           title: Text(
             drug.displayName,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
           ),
           subtitle: Text(
-            drug.subtitle,
-            style: TextStyle(color: Colors.grey.shade700, fontSize: 13.5),
+            '${drug.subtitle}  •  Tap to view details',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 13.5),
           ),
           trailing: watched
               ? Chip(

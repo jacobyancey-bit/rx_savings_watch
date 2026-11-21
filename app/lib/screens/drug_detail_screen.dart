@@ -20,17 +20,45 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   final TextEditingController _copayController = TextEditingController(text: '60');
   double _monthlyBrandCopay = 60.0;
   final double _monthlyGenericCopay = 10.0;
+  late Drug _drug;
+  bool _isRefreshingDetails = false;
   String? _selectedStrength;
   List<Map<String, dynamic>> _verifiedPartners = const [];
 
   @override
   void initState() {
     super.initState();
-    final strengths = widget.drug.availableStrengths;
+    _drug = widget.drug;
+    final strengths = _drug.availableStrengths;
     if (strengths.isNotEmpty) {
       _selectedStrength = strengths.first;
     }
+    _loadLiveDetailsIfNeeded();
     _loadVerifiedPartners();
+  }
+
+  Future<void> _loadLiveDetailsIfNeeded() async {
+    // If opened directly from Search (not yet synced via cabinet), fetch full live status & pricing
+    if (_drug.verificationSources.isNotEmpty) return;
+    setState(() => _isRefreshingDetails = true);
+    try {
+      final provider = context.read<CabinetProvider>();
+      final api = ApiService(baseUrl: provider.serverUrl);
+      final resp = await api.checkUpdates(rxcuis: [_drug.rxcui]);
+      final List drugs = resp['drugs'] as List? ?? [];
+      if (drugs.isNotEmpty && mounted) {
+        final updated = _drug.copyWithUpdate(drugs.first as Map<String, dynamic>);
+        setState(() {
+          _drug = updated;
+          if (_selectedStrength == null && updated.availableStrengths.isNotEmpty) {
+            _selectedStrength = updated.availableStrengths.first;
+          }
+          _isRefreshingDetails = false;
+        });
+        return;
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _isRefreshingDetails = false);
   }
 
   Future<void> _loadVerifiedPartners() async {
@@ -51,7 +79,9 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final drug = widget.drug;
+    final cabinet = context.watch<CabinetProvider>();
+    final drug = _drug;
+    final isWatched = cabinet.isWatched(drug.rxcui);
     final p = drug.pricing;
 
     final annualSavings = (_monthlyBrandCopay > _monthlyGenericCopay)
@@ -154,15 +184,46 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                     ),
                     const SizedBox(height: 12),
                   ],
-                  OutlinedButton.icon(
-                    onPressed: () => DoctorHandoutSheet.show(
-                      context,
-                      drug,
-                      selectedStrength: _selectedStrength,
-                    ),
-                    icon: const Icon(Icons.badge_outlined, size: 16),
-                    label: const Text('Show Doctor / Pharmacist Card'),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => DoctorHandoutSheet.show(
+                          context,
+                          drug,
+                          selectedStrength: _selectedStrength,
+                        ),
+                        icon: const Icon(Icons.badge_outlined, size: 16),
+                        label: const Text('Show Doctor / Pharmacist Card'),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: () async {
+                          if (isWatched) {
+                            await cabinet.removeDrug(drug.rxcui);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('${drug.displayName} removed from your cabinet')),
+                              );
+                            }
+                          } else {
+                            await cabinet.addDrug(drug);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('${drug.displayName} added to your cabinet')),
+                              );
+                            }
+                          }
+                        },
+                        icon: Icon(isWatched ? Icons.check_circle : Icons.add, size: 18),
+                        label: Text(isWatched ? 'In Cabinet' : 'Add to Cabinet'),
+                      ),
+                    ],
                   ),
+                  if (_isRefreshingDetails) ...[
+                    const SizedBox(height: 12),
+                    const LinearProgressIndicator(),
+                  ],
                 ],
               ),
             ),

@@ -38,6 +38,7 @@ void main() {
       expect(result.hasResult, isTrue);
       expect(result.matchedCatalogDrug?.rxcui, '1364430');
       expect(result.queryTerm, 'Eliquis');
+      expect(result.detectedStrength, '5 mg');
       // Verify zero PII leaked into queryTerm
       expect(result.queryTerm!.contains('JANE'), isFalse);
       expect(result.queryTerm!.contains('8841293'), isFalse);

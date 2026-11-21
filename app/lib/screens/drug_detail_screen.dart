@@ -9,8 +9,13 @@ import '../widgets/signal_badges.dart';
 
 class DrugDetailScreen extends StatefulWidget {
   final Drug drug;
+  final String? initialStrength;
 
-  const DrugDetailScreen({super.key, required this.drug});
+  const DrugDetailScreen({
+    super.key,
+    required this.drug,
+    this.initialStrength,
+  });
 
   @override
   State<DrugDetailScreen> createState() => _DrugDetailScreenState();
@@ -27,13 +32,41 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   Map<String, dynamic>? _discountCard;
   Map<String, dynamic>? _brandAssistance;
 
+  String? _matchBestStrength(List<String> strengths, String? target) {
+    if (strengths.isEmpty) return target;
+    if (target == null || target.trim().isEmpty) return strengths.first;
+
+    String norm(String s) => s.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+    final targetNorm = norm(target);
+
+    for (final s in strengths) {
+      if (norm(s) == targetNorm) return s;
+    }
+    for (final s in strengths) {
+      if (norm(s).startsWith(targetNorm) || targetNorm.startsWith(norm(s))) {
+        return s;
+      }
+    }
+    // Match by numeric value alone (e.g., scanned "40 mg" vs "40 mg/1")
+    final numMatch = RegExp(r'\d+(?:\.\d+)?').firstMatch(target);
+    if (numMatch != null) {
+      final numStr = numMatch.group(0)!;
+      for (final s in strengths) {
+        if (RegExp('\\b${RegExp.escape(numStr)}\\b').hasMatch(s)) return s;
+      }
+    }
+    return strengths.first;
+  }
+
   @override
   void initState() {
     super.initState();
     _drug = widget.drug;
     final strengths = _drug.availableStrengths;
     if (strengths.isNotEmpty) {
-      _selectedStrength = strengths.first;
+      _selectedStrength = _matchBestStrength(strengths, widget.initialStrength);
+    } else if (widget.initialStrength != null) {
+      _selectedStrength = widget.initialStrength;
     }
     _loadLiveDetailsIfNeeded();
     _loadVerifiedPartners();
@@ -52,8 +85,11 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
         final updated = _drug.copyWithUpdate(drugs.first as Map<String, dynamic>);
         setState(() {
           _drug = updated;
-          if (_selectedStrength == null && updated.availableStrengths.isNotEmpty) {
-            _selectedStrength = updated.availableStrengths.first;
+          if (updated.availableStrengths.isNotEmpty) {
+            _selectedStrength = _matchBestStrength(
+              updated.availableStrengths,
+              widget.initialStrength ?? _selectedStrength,
+            );
           }
           _isRefreshingDetails = false;
         });

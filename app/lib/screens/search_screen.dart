@@ -98,7 +98,11 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  Future<void> _searchLiveFederalDatabases(String query) async {
+  Future<void> _searchLiveFederalDatabases(
+    String query, {
+    bool autoOpenFirst = false,
+    String? autoOpenStrength,
+  }) async {
     final trimmed = query.trim();
     if (trimmed.length < 3 || _isLiveSearching) return;
 
@@ -129,6 +133,17 @@ class _SearchScreenState extends State<SearchScreen> {
           _isLiveSearching = false;
           _liveSearchNote = 'Verified via official FDA, RxNorm & CMS databases.';
         });
+
+        if (autoOpenFirst && mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => DrugDetailScreen(
+                drug: results.first,
+                initialStrength: autoOpenStrength,
+              ),
+            ),
+          );
+        }
       } else {
         setState(() {
           _isLiveSearching = false;
@@ -158,16 +173,26 @@ class _SearchScreenState extends State<SearchScreen> {
         return;
       }
 
+      final strengthLabel = result.detectedStrength != null ? ' (${result.detectedStrength})' : '';
+
       if (result.matchedCatalogDrug != null) {
         final drug = result.matchedCatalogDrug!;
         _controller.text = drug.displayName;
         setState(() {
           _filteredDrugs = [drug];
           _isScanningBottle = false;
-          _liveSearchNote = 'Photo immediately deleted. Matched "${drug.displayName}" from label.';
+          _liveSearchNote = 'Photo deleted. Opened "${drug.displayName}$strengthLabel" from label.';
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Photo deleted — found ${drug.displayName}')),
+          SnackBar(content: Text('Photo deleted — opened ${drug.displayName}$strengthLabel')),
+        );
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => DrugDetailScreen(
+              drug: drug,
+              initialStrength: result.detectedStrength,
+            ),
+          ),
         );
       } else if (result.queryTerm != null && result.queryTerm!.isNotEmpty) {
         final term = result.queryTerm!;
@@ -176,9 +201,13 @@ class _SearchScreenState extends State<SearchScreen> {
           _isScanningBottle = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Photo deleted — searching official FDA database for "$term"')),
+          SnackBar(content: Text('Photo deleted — opening "$term$strengthLabel" from FDA database')),
         );
-        await _searchLiveFederalDatabases(term);
+        await _searchLiveFederalDatabases(
+          term,
+          autoOpenFirst: true,
+          autoOpenStrength: result.detectedStrength,
+        );
       } else {
         setState(() {
           _isScanningBottle = false;

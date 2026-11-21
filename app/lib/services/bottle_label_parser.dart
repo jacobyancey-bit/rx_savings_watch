@@ -4,11 +4,13 @@ class BottleScanParseResult {
   final Drug? matchedCatalogDrug;
   final String? queryTerm;
   final String? detectedNdc;
+  final String? detectedStrength;
 
   const BottleScanParseResult({
     this.matchedCatalogDrug,
     this.queryTerm,
     this.detectedNdc,
+    this.detectedStrength,
   });
 
   bool get hasResult => matchedCatalogDrug != null || (queryTerm != null && queryTerm!.isNotEmpty);
@@ -45,7 +47,24 @@ class BottleLabelParser {
     'MAY', 'CAUSE', 'DROWSINESS', 'ALCOHOL', 'REFILLABLE', 'THROUGH', 'UNTIL',
   };
 
-  /// Extract only the medication match or search term from raw OCR text.
+  static final RegExp _strengthOnlyPattern = RegExp(
+    r'\b(\d+(?:\.\d+)?)\s*(MG|M6|MQ|MCG|ML|GM|G|%|UNIT|UNITS)\b',
+    caseSensitive: false,
+  );
+
+  /// Extracts and normalizes a dosage strength like `40 mg` or `12.5 mg` from OCR text.
+  static String? extractStrength(String rawOcrText) {
+    final m = _strengthOnlyPattern.firstMatch(rawOcrText);
+    if (m == null) return null;
+    final numStr = m.group(1)!;
+    var unit = m.group(2)!.toLowerCase();
+    if (unit == 'm6' || unit == 'mq') unit = 'mg';
+    if (unit == 'gm') unit = 'g';
+    if (unit == 'units') unit = 'unit';
+    return unit == '%' ? '$numStr%' : '$numStr $unit';
+  }
+
+  /// Extract only the medication match, dosage strength, or search term from raw OCR text.
   /// Raw OCR text is never returned or stored.
   static BottleScanParseResult parse(String rawOcrText, List<Drug> knownCatalog) {
     if (rawOcrText.trim().isEmpty) {
@@ -53,6 +72,7 @@ class BottleLabelParser {
     }
 
     final normalizedUpper = rawOcrText.toUpperCase();
+    final detectedStrength = extractStrength(rawOcrText);
 
     // 1. Highest-precision match: check against known canonical catalog drugs first
     for (final drug in knownCatalog) {
@@ -63,6 +83,7 @@ class BottleLabelParser {
           return BottleScanParseResult(
             matchedCatalogDrug: drug,
             queryTerm: drug.displayName,
+            detectedStrength: detectedStrength,
           );
         }
       }
@@ -71,6 +92,7 @@ class BottleLabelParser {
         return BottleScanParseResult(
           matchedCatalogDrug: drug,
           queryTerm: drug.displayName,
+          detectedStrength: detectedStrength,
         );
       }
     }
@@ -104,7 +126,10 @@ class BottleLabelParser {
             .where((w) => w.length >= 3 && !_ignoredWords.contains(w.toUpperCase()))
             .toList();
         if (words.isNotEmpty) {
-          return BottleScanParseResult(queryTerm: words.join(' '));
+          return BottleScanParseResult(
+            queryTerm: words.join(' '),
+            detectedStrength: extractStrength(line) ?? detectedStrength,
+          );
         }
       }
     }
@@ -115,6 +140,7 @@ class BottleLabelParser {
       return BottleScanParseResult(
         detectedNdc: ndcMatch.group(0),
         queryTerm: ndcMatch.group(0),
+        detectedStrength: detectedStrength,
       );
     }
 
@@ -142,7 +168,10 @@ class BottleLabelParser {
         if (tokens.isNotEmpty) {
           final candidate = tokens.take(2).join(' ');
           if (candidate.length >= 5) {
-            return BottleScanParseResult(queryTerm: candidate);
+            return BottleScanParseResult(
+              queryTerm: candidate,
+              detectedStrength: detectedStrength,
+            );
           }
         }
       }

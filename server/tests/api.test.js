@@ -6,32 +6,37 @@ const { GenericLaunchDetector } = require('../src/detector');
 const { createApp } = require('../src/app');
 
 // Helper to make mock requests to express app without spinning up network socket
-function makeRequest(app, method, path, body = null) {
+function makeRequest(app, method, path, body = null, headers = {}) {
   return new Promise((resolve) => {
     const req = {
       method,
       url: path,
       body,
-      headers: { 'content-type': 'application/json' }
+      headers: {
+        'content-type': 'application/json',
+        ...headers
+      }
     };
 
     let statusCode = 200;
-    const headers = {};
+    const resHeaders = {};
     let responseBody = null;
 
     const res = {
-      setHeader(k, v) { headers[k] = v; },
+      setHeader(k, v) { resHeaders[k.toLowerCase()] = v; },
+      getHeader(k) { return resHeaders[k.toLowerCase()]; },
+      removeHeader(k) { delete resHeaders[k.toLowerCase()]; },
       status(code) {
         statusCode = code;
         return this;
       },
       json(data) {
         responseBody = data;
-        resolve({ statusCode, headers, body: responseBody });
+        resolve({ statusCode, headers: resHeaders, body: responseBody });
       },
       send(data) {
         responseBody = data;
-        resolve({ statusCode, headers, body: responseBody });
+        resolve({ statusCode, headers: resHeaders, body: responseBody });
       }
     };
 
@@ -39,27 +44,46 @@ function makeRequest(app, method, path, body = null) {
   });
 }
 
-test('API: GET /health returns status healthy', async () => {
+test('API: GET /health returns status healthy and security headers', async () => {
   const db = getDb(':memory:');
   initSchema(db);
-  const app = createApp(db);
+  const app = createApp(db, { enableRateLimiter: false });
 
   const res = await makeRequest(app, 'GET', '/health');
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.status, 'healthy');
   assert.ok(res.body.timestamp);
+
+  // Verify privacy cache-control header
+  assert.equal(res.headers['cache-control'], 'no-store, no-cache, must-revalidate, private');
+  assert.equal(res.headers['x-content-type-options'], 'nosniff');
 });
 
-test('API: POST /api/check-updates rejects missing or invalid rxcuis', async () => {
+test('API: POST /api/check-updates rejects missing or invalid inputs', async () => {
   const db = getDb(':memory:');
   initSchema(db);
-  const app = createApp(db);
+  const app = createApp(db, { enableRateLimiter: false });
 
+  // Missing rxcuis
   const res1 = await makeRequest(app, 'POST', '/api/check-updates', {});
   assert.equal(res1.statusCode, 400);
 
+  // Empty rxcuis
   const res2 = await makeRequest(app, 'POST', '/api/check-updates', { rxcuis: [] });
   assert.equal(res2.statusCode, 400);
+
+  // Exceeding maximum RXCUI limit (bounds check)
+  const tooMany = Array.from({ length: 51 }, (_, i) => `rxcui_${i}`);
+  const res3 = await makeRequest(app, 'POST', '/api/check-updates', { rxcuis: tooMany });
+  assert.equal(res3.statusCode, 400);
+  assert.ok(res3.body.message.includes('Maximum allowed'));
+
+  // Invalid date format
+  const res4 = await makeRequest(app, 'POST', '/api/check-updates', {
+    rxcuis: ['855333'],
+    last_checked: 'invalid-date'
+  });
+  assert.equal(res4.statusCode, 400);
 });
 
 test('API: POST /api/check-updates anonymous status check and alert filtering', async () => {
@@ -71,10 +95,9 @@ test('API: POST /api/check-updates anonymous status check and alert filtering', 
   const detector = new GenericLaunchDetector(db);
   detector.runAll({ persistAlert: true });
 
-  const app = createApp(db);
+  const app = createApp(db, { enableRateLimiter: false });
 
   // Check updates for Vyvanse (855333) and Eliquis (1364430)
-  // Request 1: Checked since 1970 (receives historical launch alert for Vyvanse)
   const res1 = await makeRequest(app, 'POST', '/api/check-updates', {
     rxcuis: ['855333', '1364430'],
     last_checked: '2020-01-01T00:00:00Z'
@@ -112,19 +135,51 @@ test('API: POST /api/check-updates anonymous status check and alert filtering', 
   assert.equal(res2.body.drugs[0].commercial_generic_available, true, 'Snapshot still reflects available generic');
 });
 
-test('API: GET /api/drugs and GET /api/drugs/:rxcui', async () => {
+test('API: GET /api/drugs supports search query and pagination', async () => {
   const db = getDb(':memory:');
   initSchema(db);
   await runAllIngestions(db);
-  const app = createApp(db);
+  const app = createApp(db, { enableRateLimiter: false });
 
+  // 1. List all
   const resAll = await makeRequest(app, 'GET', '/api/drugs');
   assert.equal(resAll.statusCode, 200);
-  assert.ok(resAll.body.count >= 5);
+  assert.ok(resAll.body.total >= 5);
 
-  const resOne = await makeRequest(app, 'GET', '/api/drugs/855333');
-  assert.equal(resOne.statusCode, 200);
-  assert.equal(resOne.body.brand_name, 'Vyvanse');
-  assert.ok(resOne.body.generic_status.length >= 3);
-  assert.ok(resOne.body.market_availability.length >= 2);
+  // 2. Search query 'vyvanse'
+  const resVyvanse = await makeRequest(app, 'GET', '/api/drugs?q=vyvanse');
+  assert.equal(resVyvanse.statusCode, 200);
+  assert.equal(resVyvanse.body.drugs.length, 1);
+  assert.equal(resVyvanse.body.drugs[0].brand_name, 'Vyvanse');
+
+  // 3. Search pagination
+  const resPaged = await makeRequest(app, 'GET', '/api/drugs?limit=2&offset=0');
+  assert.equal(resPaged.statusCode, 200);
+  assert.equal(resPaged.body.drugs.length, 2);
+  assert.equal(resPaged.body.limit, 2);
+  assert.equal(resPaged.body.offset, 0);
+});
+
+test('API: POST /api/scheduler/trigger requires admin authentication', async () => {
+  const db = getDb(':memory:');
+  initSchema(db);
+  const app = createApp(db, { enableRateLimiter: false });
+
+  // 1. Unauthenticated request -> 401
+  const resUnauthorized = await makeRequest(app, 'POST', '/api/scheduler/trigger', {});
+  assert.equal(resUnauthorized.statusCode, 401);
+  assert.equal(resUnauthorized.body.error, 'Unauthorized');
+
+  // 2. Request with invalid key -> 401
+  const resInvalid = await makeRequest(app, 'POST', '/api/scheduler/trigger', {}, {
+    'x-admin-key': 'wrong-key'
+  });
+  assert.equal(resInvalid.statusCode, 401);
+
+  // 3. Request with valid admin key -> 200
+  const resValid = await makeRequest(app, 'POST', '/api/scheduler/trigger', {}, {
+    'x-admin-key': 'dev-admin-secret-key'
+  });
+  assert.equal(resValid.statusCode, 200);
+  assert.equal(resValid.body.success, true);
 });

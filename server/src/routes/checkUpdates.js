@@ -1,4 +1,5 @@
 const express = require('express');
+const config = require('../config');
 
 /**
  * Anonymous Check Updates Endpoint
@@ -37,6 +38,7 @@ function createCheckUpdatesRouter(db) {
   router.post('/check-updates', (req, res) => {
     const { rxcuis, last_checked } = req.body || {};
 
+    // 1. Strict Validation: Array of strings
     if (!Array.isArray(rxcuis) || rxcuis.length === 0) {
       return res.status(400).json({
         error: 'Bad Request',
@@ -44,9 +46,37 @@ function createCheckUpdatesRouter(db) {
       });
     }
 
-    const lastCheckedDate = last_checked || '1970-01-01T00:00:00Z';
-    const checkedAt = new Date().toISOString();
+    // 2. Strict Bounds Checking: Max RXCUIs to prevent memory exhaustion
+    if (rxcuis.length > config.MAX_RXCUIS_PER_CHECK) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: `Maximum allowed rxcuis per check is ${config.MAX_RXCUIS_PER_CHECK}.`
+      });
+    }
 
+    // 3. Validate each item is a clean string/number
+    for (const rxcui of rxcuis) {
+      if (typeof rxcui !== 'string' && typeof rxcui !== 'number') {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Each rxcui must be a string or number.'
+        });
+      }
+    }
+
+    // 4. Validate last_checked timestamp if provided
+    let lastCheckedDate = '1970-01-01T00:00:00Z';
+    if (last_checked) {
+      if (typeof last_checked !== 'string' || isNaN(Date.parse(last_checked))) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'last_checked must be a valid ISO-8601 date string.'
+        });
+      }
+      lastCheckedDate = last_checked;
+    }
+
+    const checkedAt = new Date().toISOString();
     const results = [];
     let totalUpdatesFound = 0;
 

@@ -1,7 +1,7 @@
 const express = require('express');
 
 /**
- * Drug details and lookup router
+ * Drug details and lookup router with search and pagination
  * @param {import('node:sqlite').DatabaseSync} db
  * @returns {express.Router}
  */
@@ -9,15 +9,40 @@ function createDrugsRouter(db) {
   const router = express.Router();
 
   const getDrugByRxcui = db.prepare('SELECT * FROM drugs WHERE rxcui = ?');
-  const getAllDrugs = db.prepare('SELECT * FROM drugs ORDER BY brand_name ASC');
   const getGenericStatus = db.prepare('SELECT * FROM generic_status WHERE drug_id = ?');
   const getMarket = db.prepare('SELECT * FROM market_availability WHERE drug_id = ?');
   const getShortages = db.prepare('SELECT * FROM drug_shortages WHERE drug_id = ?');
   const getAlerts = db.prepare('SELECT * FROM alert_events WHERE drug_id = ? ORDER BY detected_at DESC');
 
+  const searchDrugsStmt = db.prepare(`
+    SELECT * FROM drugs 
+    WHERE brand_name LIKE ? OR generic_name LIKE ? OR rxcui LIKE ?
+    ORDER BY brand_name ASC
+    LIMIT ? OFFSET ?
+  `);
+
+  const countSearchDrugsStmt = db.prepare(`
+    SELECT count(*) as total FROM drugs 
+    WHERE brand_name LIKE ? OR generic_name LIKE ? OR rxcui LIKE ?
+  `);
+
   router.get('/drugs', (req, res) => {
-    const drugs = getAllDrugs.all();
-    res.json({ count: drugs.length, drugs });
+    const query = req.query.q ? String(req.query.q).trim() : '';
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+    const pattern = `%${query}%`;
+    const drugs = searchDrugsStmt.all(pattern, pattern, pattern, limit, offset);
+    const totalCount = countSearchDrugsStmt.get(pattern, pattern, pattern).total;
+
+    res.json({
+      query,
+      count: drugs.length,
+      total: totalCount,
+      limit,
+      offset,
+      drugs
+    });
   });
 
   router.get('/drugs/:rxcui', (req, res) => {

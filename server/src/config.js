@@ -6,6 +6,12 @@ module.exports = {
   SCHEMA_PATH: path.resolve(__dirname, 'db/schema.sql'),
   FIXTURES_DIR: path.resolve(__dirname, '../data/fixtures'),
   
+  // Security & Rate Limiting
+  ADMIN_API_KEY: process.env.ADMIN_API_KEY || 'dev-admin-secret-key',
+  RATE_LIMIT_WINDOW_MS: 15 * 60 * 1000, // 15 minutes
+  RATE_LIMIT_MAX_REQUESTS: 120, // max requests per window
+  MAX_RXCUIS_PER_CHECK: 50, // maximum RXCUIs allowed in single check-updates payload
+
   // Feed source endpoints (with reasonable timeouts)
   FEEDS: {
     RXNAV_BASE_URL: process.env.RXNAV_BASE_URL || 'https://rxnav.nlm.nih.gov/REST',
@@ -17,9 +23,7 @@ module.exports = {
   },
   
   DETECTOR: {
-    // Minimum confidence threshold to trigger commercial generic launch alert
     CONFIDENCE_THRESHOLD: 0.90,
-    // Days threshold to consider a marketing start date "recent" or active
     MAX_HISTORICAL_DAYS: 3650
   }
 };

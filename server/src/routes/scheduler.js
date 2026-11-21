@@ -1,4 +1,5 @@
 const express = require('express');
+const config = require('../config');
 
 /**
  * Scheduler management & status router
@@ -7,6 +8,28 @@ const express = require('express');
  */
 function createSchedulerRouter(scheduler) {
   const router = express.Router();
+
+  // Authentication middleware for administrative scheduler actions
+  function requireAdminAuth(req, res, next) {
+    const authHeader = req.headers.authorization;
+    const adminKeyHeader = req.headers['x-admin-key'];
+
+    let providedKey = null;
+    if (adminKeyHeader) {
+      providedKey = adminKeyHeader;
+    } else if (authHeader && authHeader.startsWith('Bearer ')) {
+      providedKey = authHeader.substring(7);
+    }
+
+    if (!providedKey || providedKey !== config.ADMIN_API_KEY) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Valid admin API key required in X-Admin-Key or Authorization header.'
+      });
+    }
+
+    next();
+  }
 
   router.get('/scheduler/status', (req, res) => {
     res.json({
@@ -17,7 +40,7 @@ function createSchedulerRouter(scheduler) {
     });
   });
 
-  router.post('/scheduler/trigger', async (req, res) => {
+  router.post('/scheduler/trigger', requireAdminAuth, async (req, res) => {
     try {
       const { feed } = req.body || {};
       let result;

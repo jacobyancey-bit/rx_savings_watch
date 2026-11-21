@@ -24,6 +24,8 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   bool _isRefreshingDetails = false;
   String? _selectedStrength;
   List<Map<String, dynamic>> _verifiedPartners = const [];
+  Map<String, dynamic>? _discountCard;
+  Map<String, dynamic>? _brandAssistance;
 
   @override
   void initState() {
@@ -64,9 +66,18 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   Future<void> _loadVerifiedPartners() async {
     final provider = context.read<CabinetProvider>();
     final api = ApiService(baseUrl: provider.serverUrl);
-    final partners = await api.getVerifiedPartners(widget.drug.rxcui);
+    final options = await api.getSavingsOptions(widget.drug.rxcui);
+    final list = (options['partners'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
     if (mounted) {
-      setState(() => _verifiedPartners = partners);
+      setState(() {
+        _verifiedPartners = list;
+        _discountCard = options['discount_card'] is Map<String, dynamic>
+            ? options['discount_card'] as Map<String, dynamic>
+            : null;
+        _brandAssistance = options['brand_assistance'] is Map<String, dynamic>
+            ? options['brand_assistance'] as Map<String, dynamic>
+            : null;
+      });
     }
   }
 
@@ -100,6 +111,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               context,
               drug,
               selectedStrength: _selectedStrength,
+              discountCard: _discountCard,
             ),
           ),
         ],
@@ -612,6 +624,128 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                   ),
                 ),
             ],
+            // Embedded Pharmacy Discount Card (activates automatically when PBM_BIN & PBM_GROUP are configured)
+            if (_discountCard != null) ...[
+              const SizedBox(height: 24),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withValues(alpha: theme.brightness == Brightness.dark ? 0.18 : 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.teal.withValues(alpha: 0.45), width: 1.5),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.credit_card_outlined,
+                          color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade800,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _discountCard!['name']?.toString() ?? 'Pharmacy Discount Card',
+                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Show these 4 numbers to your pharmacist for cash savings (no account required):',
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 16,
+                      runSpacing: 8,
+                      children: [
+                        _buildCodePill(context, 'BIN', _discountCard!['bin']?.toString() ?? ''),
+                        if (_discountCard!['pcn'] != null)
+                          _buildCodePill(context, 'PCN', _discountCard!['pcn'].toString()),
+                        _buildCodePill(context, 'GROUP', _discountCard!['group']?.toString() ?? ''),
+                        _buildCodePill(context, 'MEMBER ID', _discountCard!['member_id']?.toString() ?? ''),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Official Manufacturer Copay Card & Medicare Patient Assistance (for brand-only / biologic drugs)
+            if (_brandAssistance != null) ...[
+              const SizedBox(height: 24),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.health_and_safety_outlined,
+                          color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade700,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Manufacturer Savings & Patient Assistance',
+                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_brandAssistance!['note'] != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _brandAssistance!['note'].toString(),
+                        style: theme.textTheme.bodyMedium?.copyWith(height: 1.35),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        if (_brandAssistance!['url'] != null)
+                          _buildPartnerButton(
+                            context,
+                            label: _brandAssistance!['program_name']?.toString() ?? 'Manufacturer Savings Card',
+                            icon: Icons.card_giftcard_outlined,
+                            uri: Uri.parse(_brandAssistance!['url'].toString()),
+                          ),
+                        if (_brandAssistance!['pap_url'] != null)
+                          _buildPartnerButton(
+                            context,
+                            label: 'Patient Assistance Program',
+                            icon: Icons.volunteer_activism_outlined,
+                            uri: Uri.parse(_brandAssistance!['pap_url'].toString()),
+                          ),
+                        if (_brandAssistance!['medicare_extra_help_url'] != null)
+                          _buildPartnerButton(
+                            context,
+                            label: 'Medicare Extra Help (SSA.gov)',
+                            icon: Icons.account_balance_outlined,
+                            uri: Uri.parse(_brandAssistance!['medicare_extra_help_url'].toString()),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             // Compare Cash & Discount Pharmacy Prices (ONLY shown when verified partners exist!)
             if (_verifiedPartners.isNotEmpty) ...[
               const SizedBox(height: 24),
@@ -771,6 +905,40 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildCodePill(BuildContext context, String label, String value) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ],
+      ),
     );
   }
 

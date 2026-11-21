@@ -243,6 +243,141 @@ async function getVerifiedPartnersForDrug(db, drug) {
     }));
 }
 
+// Official Manufacturer Copay & Patient Assistance Programs for high-spend brand medications
+const BRAND_SAVINGS_PROGRAMS = {
+  eliquis: {
+    program_name: 'Eliquis $10 Co-Pay Card & BMS Patient Assistance',
+    url: 'https://www.eliquis.bmscustomerconnect.com/savings',
+    pap_url: 'https://www.bmspaf.org/',
+    note: 'Manufacturer co-pay card for eligible commercial insurance; BMS Patient Assistance Foundation available for qualifying uninsured/Medicare patients.',
+  },
+  jardiance: {
+    program_name: 'Jardiance Savings Card & BI Cares Assistance',
+    url: 'https://patient.boehringer-ingelheim.com/us/products/jardiance/type-2-diabetes/pricing',
+    pap_url: 'https://www.boehringer-ingelheim.com/us/about-us/sustainable-development/patient-assistance',
+    note: 'Manufacturer savings for eligible commercial insurance; BI Cares Foundation helps qualifying uninsured/Medicare patients.',
+  },
+  'jornay pm': {
+    program_name: 'Jornay PM Savings Offer',
+    url: 'https://www.jornaypm.com/savings-offer/',
+    pap_url: 'https://www.needymeds.org/brand-drug/name/Jornay%20PM',
+    note: 'Official manufacturer savings card for eligible commercially insured patients.',
+  },
+  ozempic: {
+    program_name: 'NovoCare Ozempic Savings & Patient Assistance',
+    url: 'https://www.novocare.com/diabetes/products/ozempic/savings-offer.html',
+    pap_url: 'https://www.novocare.com/diabetes/help-with-costs/pap.html',
+    note: 'NovoCare offers both a commercial savings card and a Patient Assistance Program (PAP) for qualifying Medicare/uninsured patients.',
+  },
+  wegovy: {
+    program_name: 'NovoCare Wegovy Savings Offer',
+    url: 'https://www.novocare.com/obesity/products/wegovy/savings-offer.html',
+    pap_url: 'https://www.novocare.com/',
+    note: 'Official NovoCare savings program for eligible patients.',
+  },
+  mounjaro: {
+    program_name: 'Lilly Mounjaro Savings Card',
+    url: 'https://mounjaro.lilly.com/savings-resources',
+    pap_url: 'https://www.lillycares.com/',
+    note: 'Official Lilly savings card; Lilly Cares Foundation provides assistance for qualifying patients.',
+  },
+  xarelto: {
+    program_name: 'Xarelto withMe Savings Program',
+    url: 'https://www.xarelto-us.com/xarelto-cost',
+    pap_url: 'https://www.jjpaf.org/',
+    note: 'Janssen withMe savings for commercial plans; Johnson & Johnson Patient Assistance Foundation for qualifying patients.',
+  },
+  entresto: {
+    program_name: 'Entresto Co-Pay Offer & Novartis Patient Assistance',
+    url: 'https://www.entresto.com/savings-and-support/',
+    pap_url: 'https://www.novartis.com/us-en/patients-and-caregivers/patient-assistance',
+    note: 'Official Novartis savings card and Patient Assistance Foundation.',
+  },
+  farxiga: {
+    program_name: 'Farxiga Savings Card & AZ&Me Assistance',
+    url: 'https://www.farxiga.com/savings-support',
+    pap_url: 'https://www.azandme.com/',
+    note: 'AstraZeneca savings card and AZ&Me Prescription Savings Program for qualifying patients.',
+  },
+  januvia: {
+    program_name: 'Januvia Savings Coupon & Merck Helps',
+    url: 'https://www.januvia.com/special-offers/',
+    pap_url: 'https://www.merckhelps.com/',
+    note: 'Official Merck savings offer and Merck Patient Assistance Program.',
+  },
+  humira: {
+    program_name: 'Humira Complete Savings & myAbbVie Assist',
+    url: 'https://www.humira.com/humira-complete/cost-and-copay',
+    pap_url: 'https://www.abbvie.com/patients/patient-support/patient-assistance.html',
+    note: 'AbbVie savings card and myAbbVie Assist program; lower-cost FDA-approved biosimilars are also available.',
+  },
+  enbrel: {
+    program_name: 'Enbrel Co-Pay Card & Amgen Safety Net',
+    url: 'https://www.enbrel.com/support',
+    pap_url: 'https://www.amgensafetynetfoundation.com/',
+    note: 'Official Amgen co-pay support and Safety Net Foundation for qualifying patients.',
+  },
+  stelara: {
+    program_name: 'Stelara withMe Savings Program',
+    url: 'https://www.stelarainfo.com/savings-and-support',
+    pap_url: 'https://www.jjpaf.org/',
+    note: 'Janssen withMe savings support and J&J Patient Assistance Foundation.',
+  },
+};
+
+/**
+ * Returns your live PBM Pharmacy Discount Card if configured via environment variables
+ * (PBM_BIN and PBM_GROUP). Returns null when unconfigured so no placeholder codes ever appear.
+ */
+function getConfiguredDiscountCard() {
+  const bin = (process.env.PBM_BIN || '').trim();
+  const group = (process.env.PBM_GROUP || '').trim();
+  if (!bin || !group) return null;
+
+  return {
+    name: (process.env.PBM_CARD_NAME || 'Rx Savings Watch Discount Card').trim(),
+    bin,
+    pcn: (process.env.PBM_PCN || '').trim() || null,
+    group,
+    member_id: (process.env.PBM_MEMBER_ID || 'RXSAVE100').trim(),
+    support_phone: (process.env.PBM_SUPPORT_PHONE || '').trim() || null,
+  };
+}
+
+/**
+ * Returns official Manufacturer Savings Card & Medicare Patient Assistance info
+ * (shown primarily for brand-only medications or biologics).
+ */
+function getBrandAssistanceForDrug(drug, hasCommercialGeneric) {
+  const brandKey = (drug.brand_name || '').toLowerCase().trim();
+  const matched = Object.entries(BRAND_SAVINGS_PROGRAMS).find(
+    ([k]) => brandKey === k || brandKey.startsWith(`${k} `)
+  )?.[1];
+
+  if (matched) {
+    return {
+      ...matched,
+      medicare_extra_help_url: 'https://www.ssa.gov/medicare/part-d-extra-help',
+    };
+  }
+
+  // For any brand-only drug not yet in our curated directory, still offer official Medicare Extra Help & NeedyMeds
+  if (!hasCommercialGeneric) {
+    const q = encodeURIComponent(drug.brand_name || drug.generic_name);
+    return {
+      program_name: null,
+      url: null,
+      pap_url: `https://www.needymeds.org/search-programs?search=${q}`,
+      medicare_extra_help_url: 'https://www.ssa.gov/medicare/part-d-extra-help',
+      note: 'Because no generic is available yet, check official Medicare Extra Help or NeedyMeds Patient Assistance Programs for lower-cost coverage.',
+    };
+  }
+
+  return null;
+}
+
 module.exports = {
   getVerifiedPartnersForDrug,
+  getConfiguredDiscountCard,
+  getBrandAssistanceForDrug,
 };

@@ -124,18 +124,18 @@ class ApiService {
     };
   }
 
-  /// Fetch ONLY verified cash & discount pharmacy links that actually carry this prescription
-  Future<List<Map<String, dynamic>>> getVerifiedPartners(String rxcui) async {
+  /// Fetch verified cash & discount pharmacy links, optional PBM discount card, and brand assistance
+  Future<Map<String, dynamic>> getSavingsOptions(String rxcui) async {
     try {
       final response = await http
           .get(Uri.parse('$baseUrl/api/drugs/$rxcui/partners'))
           .timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) return const [];
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final list = data['partners'] as List? ?? [];
-      return list.whereType<Map<String, dynamic>>().toList();
+      if (response.statusCode != 200) {
+        return const {'partners': [], 'discount_card': null, 'brand_assistance': null};
+      }
+      return jsonDecode(response.body) as Map<String, dynamic>;
     } catch (_) {
-      return const [];
+      return const {'partners': [], 'discount_card': null, 'brand_assistance': null};
     }
   }
 

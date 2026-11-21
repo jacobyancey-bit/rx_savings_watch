@@ -1,7 +1,11 @@
 const express = require('express');
 const config = require('../config');
 const { discoverAndIngestDrug } = require('../ingestion/live_feeds');
-const { getVerifiedPartnersForDrug } = require('../services/partnerResolver');
+const {
+  getVerifiedPartnersForDrug,
+  getConfiguredDiscountCard,
+  getBrandAssistanceForDrug,
+} = require('../services/partnerResolver');
 
 const RXCUI_PATTERN = /^\d{1,12}$/;
 const ALLOWED_FLAG_TYPES = new Set([
@@ -198,7 +202,7 @@ function createDrugsRouter(db) {
     });
   });
 
-  // Verified Cash & Discount Pharmacy Links (returns ONLY partners confirmed to carry this drug)
+  // Verified Cash & Discount Pharmacy Links + Optional PBM Card + Brand Patient Assistance
   router.get('/drugs/:rxcui/partners', async (req, res) => {
     const rxcui = String(req.params.rxcui || '').trim();
     if (!RXCUI_PATTERN.test(rxcui)) {
@@ -210,12 +214,29 @@ function createDrugsRouter(db) {
       return res.status(404).json({ error: 'Drug not found' });
     }
 
+    const hasGenericApproved = db.prepare(
+      'SELECT 1 FROM generic_status WHERE drug_id = ? AND is_approved_generic = 1 LIMIT 1'
+    ).get(drug.id) != null;
+
+    const discountCard = getConfiguredDiscountCard();
+    const brandAssistance = getBrandAssistanceForDrug(drug, hasGenericApproved);
+
     try {
       const partners = await getVerifiedPartnersForDrug(db, drug);
-      res.json({ rxcui, partners });
+      res.json({
+        rxcui,
+        partners,
+        discount_card: discountCard,
+        brand_assistance: brandAssistance,
+      });
     } catch (err) {
       console.error('[DrugsRouter] Partner resolution error:', err.message);
-      res.json({ rxcui, partners: [] });
+      res.json({
+        rxcui,
+        partners: [],
+        discount_card: discountCard,
+        brand_assistance: brandAssistance,
+      });
     }
   });
 

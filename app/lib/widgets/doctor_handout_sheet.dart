@@ -8,14 +8,21 @@ import '../services/web_push_service.dart';
 class DoctorHandoutSheet extends StatelessWidget {
   final Drug drug;
   final String? selectedStrength;
+  final Map<String, dynamic>? discountCard;
 
   const DoctorHandoutSheet({
     super.key,
     required this.drug,
     this.selectedStrength,
+    this.discountCard,
   });
 
-  static void show(BuildContext context, Drug drug, {String? selectedStrength}) {
+  static void show(
+    BuildContext context,
+    Drug drug, {
+    String? selectedStrength,
+    Map<String, dynamic>? discountCard,
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -23,6 +30,7 @@ class DoctorHandoutSheet extends StatelessWidget {
       builder: (_) => DoctorHandoutSheet(
         drug: drug,
         selectedStrength: selectedStrength,
+        discountCard: discountCard,
       ),
     );
   }
@@ -64,6 +72,13 @@ class DoctorHandoutSheet extends StatelessWidget {
     if (drug.verificationSources.isNotEmpty) {
       buf.writeln('Verified via: ${drug.verificationSources.join(', ')}');
     }
+    if (discountCard != null) {
+      buf
+        ..writeln('')
+        ..writeln('Pharmacy Discount Card (${discountCard!['name'] ?? 'Rx Savings'})')
+        ..writeln('BIN: ${discountCard!['bin']}  |  GROUP: ${discountCard!['group']}')
+        ..writeln('PCN: ${discountCard!['pcn'] ?? '-'}  |  MEMBER ID: ${discountCard!['member_id']}');
+    }
     buf.writeln('\nFor informational discussion with your doctor or pharmacist.');
     return buf.toString();
   }
@@ -84,6 +99,15 @@ class DoctorHandoutSheet extends StatelessWidget {
         ? '<div class="row"><span class="label">Dosage &amp; Form:</span> ${_escapeHtml(_displayDosage)}</div>'
         : '';
 
+    final discountHtml = discountCard != null
+        ? '''
+      <div class="box">
+        <div class="row"><span class="label">${_escapeHtml(discountCard!['name']?.toString() ?? 'Pharmacy Discount Card')}</span></div>
+        <div class="row"><span class="label">BIN:</span> ${_escapeHtml(discountCard!['bin']?.toString() ?? '')} &nbsp;&nbsp; <span class="label">PCN:</span> ${_escapeHtml(discountCard!['pcn']?.toString() ?? '-')}</div>
+        <div class="row"><span class="label">GROUP:</span> ${_escapeHtml(discountCard!['group']?.toString() ?? '')} &nbsp;&nbsp; <span class="label">MEMBER ID:</span> ${_escapeHtml(discountCard!['member_id']?.toString() ?? '')}</div>
+      </div>'''
+        : '';
+
     return '''
       <h1>Rx Savings Watch — Pharmacist &amp; Doctor Card</h1>
       <p class="sub">Bring or show this sheet at your pharmacy counter or doctor visit.</p>
@@ -94,6 +118,7 @@ class DoctorHandoutSheet extends StatelessWidget {
         <div class="row"><span class="label">NLM RxCUI:</span> ${_escapeHtml(drug.rxcui)}</div>
         $sources
       </div>
+      $discountHtml
       <div class="note">
         <div class="row"><span class="label">${_escapeHtml(_ratingTitle)}</span></div>
         <div>${_escapeHtml(drug.substitutionPlainGuidance)}</div>

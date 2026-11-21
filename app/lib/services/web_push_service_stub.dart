@@ -8,4 +8,5 @@ class WebPushService {
   static Future<bool> showLocalTestNotification() async => false;
   static bool printHandout(String title, String bodyHtml) => false;
   static void clearUrlHash() {}
+  static String consumePendingImportHash() => '';
 }

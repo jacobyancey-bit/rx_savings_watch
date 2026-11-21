@@ -32,7 +32,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_checkedIncomingTransfer || !kIsWeb || !mounted) return;
     _checkedIncomingTransfer = true;
 
-    final fragment = Uri.base.fragment;
+    final capturedHash = WebPushService.consumePendingImportHash();
+    final fragment = capturedHash.isNotEmpty ? capturedHash : Uri.base.fragment;
     if (fragment.isEmpty || !fragment.toLowerCase().contains('import=')) return;
 
     final rxcuis = CabinetTransferService.parseRxcuisFromInput(fragment);

@@ -6,6 +6,19 @@
   const SW_PATH = '/rx-push-sw.js';
   const SW_SCOPE = '/rx-push/';
 
+  // Capture #import=... BEFORE Flutter Web's HashUrlStrategy boots and rewrites the URL hash!
+  let pendingImportHash = '';
+  try {
+    if (window.location && window.location.hash && window.location.hash.toLowerCase().includes('import=')) {
+      pendingImportHash = window.location.hash;
+      window.history.replaceState(
+        null,
+        '',
+        window.location.pathname + window.location.search
+      );
+    }
+  } catch (_) {}
+
   function openDb() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
@@ -197,6 +210,20 @@
           );
         }
       } catch (_) {}
+    },
+
+    consumePendingImportHash: function () {
+      try {
+        let val = pendingImportHash;
+        if (!val && window.location && window.location.hash && window.location.hash.toLowerCase().includes('import=')) {
+          val = window.location.hash;
+          this.clearUrlHash();
+        }
+        pendingImportHash = '';
+        return val || '';
+      } catch (_) {
+        return '';
+      }
     },
   };
 })();

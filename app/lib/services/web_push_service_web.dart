@@ -13,6 +13,7 @@ extension type _RxPushBridge(JSObject _) implements JSObject {
   external JSPromise<JSBoolean> showLocalTestNotification();
   external bool printHandout(String title, String bodyHtml);
   external void clearUrlHash();
+  external String consumePendingImportHash();
 }
 
 /// Web implementation calling window.rxPush (Service Worker + IndexedDB local filtering).
@@ -89,5 +90,13 @@ class WebPushService {
     try {
       _rxPush?.clearUrlHash();
     } catch (_) {}
+  }
+
+  static String consumePendingImportHash() {
+    try {
+      return _rxPush?.consumePendingImportHash() ?? '';
+    } catch (_) {
+      return '';
+    }
   }
 }

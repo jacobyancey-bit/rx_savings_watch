@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/drug.dart';
 import '../services/api_service.dart';
@@ -9,6 +10,7 @@ class CabinetProvider extends ChangeNotifier {
   final StorageService _storageService;
   final NotificationService _notificationService;
   late ApiService _apiService;
+  final Completer<void> _initCompleter = Completer<void>();
 
   List<Drug> _cabinet = [];
   bool _isLoading = true;
@@ -83,6 +85,9 @@ class CabinetProvider extends ChangeNotifier {
     _lastChecked = await _storageService.getLastCheckedTimestamp();
     await WebPushService.syncWatchedRxcuis(_cabinet.map((d) => d.rxcui).toList());
     _isLoading = false;
+    if (!_initCompleter.isCompleted) {
+      _initCompleter.complete();
+    }
     notifyListeners();
 
     // Auto-sync cabinet if items exist
@@ -158,6 +163,7 @@ class CabinetProvider extends ChangeNotifier {
   /// Uses the anonymous, k-anonymity-chaffed check-updates endpoint to hydrate
   /// each drug's canonical FDA/CMS status, then saves locally on this device.
   Future<int> importRxcuis(List<String> rxcuis) async {
+    await _initCompleter.future;
     final newRxcuis = rxcuis
         .map((r) => r.trim())
         .where((r) => r.isNotEmpty && !isWatched(r))

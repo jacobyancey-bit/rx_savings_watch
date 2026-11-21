@@ -5,7 +5,7 @@
 /// Zero personal identifiers, account tokens, or cabinet lists are ever included.
 class PartnerLinks {
   // Optional affiliate/referral IDs — fill in whenever you receive partner tags
-  static const String amazonAssociatesTag = ''; // e.g., 'danglingdice-20'
+  static const String amazonAssociatesTag = 'danglingdices-20';
   static const String singleCarePartnerParam = ''; // e.g., 'utm_source=danglingdice'
   static const String goodRxPartnerParam = ''; // e.g., 'utm_source=danglingdice'
 

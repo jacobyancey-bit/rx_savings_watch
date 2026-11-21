@@ -120,6 +120,35 @@ async function probeUrlExists(url) {
   }
 }
 
+function applyPartnerTracking(partnerId, rawUrl) {
+  if (!rawUrl) return rawUrl;
+  try {
+    const parsed = new URL(rawUrl);
+    if (partnerId === 'amazon_pharmacy') {
+      const tag = (process.env.AMAZON_ASSOCIATES_TAG || '').trim();
+      if (tag) parsed.searchParams.set('tag', tag);
+      return parsed.toString();
+    }
+    if (partnerId === 'singlecare') {
+      const param = (process.env.SINGLECARE_PARTNER_PARAM || '').trim().replace(/^\?/, '');
+      if (param) {
+        const sp = new URLSearchParams(param);
+        for (const [k, v] of sp.entries()) parsed.searchParams.set(k, v);
+      }
+      return parsed.toString();
+    }
+    if (partnerId === 'goodrx') {
+      const param = (process.env.GOODRX_PARTNER_PARAM || '').trim().replace(/^\?/, '');
+      if (param) {
+        const sp = new URLSearchParams(param);
+        for (const [k, v] of sp.entries()) parsed.searchParams.set(k, v);
+      }
+      return parsed.toString();
+    }
+  } catch (_) {}
+  return rawUrl;
+}
+
 /**
  * Resolve & cache verified cash/discount pharmacy links for a drug.
  * Returns ONLY verified partners that actually have information for this prescription.
@@ -141,7 +170,7 @@ async function getVerifiedPartnersForDrug(db, drug) {
         .map(r => ({
           id: r.partner_id,
           label: r.label,
-          url: r.url,
+          url: applyPartnerTracking(r.partner_id, r.url),
           price_hint: r.price_hint || null,
         }));
     }

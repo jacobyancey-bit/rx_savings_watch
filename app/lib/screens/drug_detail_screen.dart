@@ -810,7 +810,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Transparency notice: Some links may earn Dangling Dice Studios a small referral fee at zero cost to you. No personal data is shared when you open a link.',
+                      'Transparency notice: As an Amazon Associate I earn from qualifying purchases. Some pharmacy links may earn Dangling Dice Studios a small referral fee at zero cost to you. No personal data is shared when you open a link.',
                       style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant, height: 1.35),
                     ),
                   ],

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/partner_links.dart';
 import '../models/drug.dart';
+import '../providers/cabinet_provider.dart';
+import '../services/api_service.dart';
 import '../widgets/doctor_handout_sheet.dart';
 import '../widgets/signal_badges.dart';
 
@@ -555,10 +558,92 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               ),
             ),
 
+            const SizedBox(height: 16),
+
+            // Zero-PII Anonymous Data Quality Flag Button
+            Center(
+              child: TextButton.icon(
+                onPressed: () => _showFlagIssueSheet(context, drug),
+                icon: Icon(Icons.flag_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                label: Text(
+                  'Notice something off with this drug\'s info?',
+                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ),
+
             const SizedBox(height: 24),
           ],
         ),
       ),
+    );
+  }
+
+  void _showFlagIssueSheet(BuildContext context, Drug drug) {
+    final options = <(String, String, IconData)>[
+      ('missing_dosage', 'Missing a dosage or strength', Icons.format_list_numbered),
+      ('generic_available', 'A generic version is actually available', Icons.verified_outlined),
+      ('price_looks_off', 'Estimated price looks outdated or off', Icons.attach_money),
+      ('shortage_incorrect', 'Shortage status looks outdated', Icons.warning_amber_outlined),
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Help Improve Accuracy for ${drug.displayName}',
+                  style: Theme.of(sheetCtx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '100% anonymous — sends only the drug ID and issue category, with zero personal data.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(sheetCtx).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                for (final (issueCode, label, icon) in options)
+                  ListTile(
+                    leading: Icon(icon),
+                    title: Text(label),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      Navigator.of(sheetCtx).pop();
+                      final provider = context.read<CabinetProvider>();
+                      final api = ApiService(baseUrl: provider.serverUrl);
+                      final ok = await api.submitDataQualityFlag(
+                        rxcui: drug.rxcui,
+                        issueType: issueCode,
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok
+                                  ? 'Thank you! Flagged anonymously — no personal data was sent.'
+                                  : 'Could not submit flag right now. Please try again later.',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -67,8 +67,9 @@ function evaluateCommercialSignal(marketRows, regulatorySignal, asOfDate) {
 
     if (isBrand) return false;
 
-    // Generic rows: marketing_category is 'ANDA', or BLA (biosimilar), or generic NADAC
+    // Generic rows: marketing_category is 'ANDA', 'AUTHORIZED_GENERIC', or BLA (biosimilar), or generic NADAC
     const isGenericCategory = m.marketing_category === 'ANDA' || 
+      m.marketing_category === 'AUTHORIZED_GENERIC' ||
       (m.marketing_category === 'BLA' && regulatorySignal?.biosimilar_status);
 
     const hasGenericNadac = m.source === 'cms_nadac';

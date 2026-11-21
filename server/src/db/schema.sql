@@ -103,6 +103,19 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ingestion_runs_feed ON ingestion_runs(feed_name, completed_at DESC);
+
+-- 6. Anonymous Data Quality Flags: Zero-PII crowd-sourced accuracy feedback
+CREATE TABLE IF NOT EXISTS data_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    drug_id INTEGER REFERENCES drugs(id) ON DELETE CASCADE,
+    rxcui TEXT NOT NULL,
+    issue_type TEXT NOT NULL CHECK(issue_type IN (
+      'missing_dosage', 'generic_available', 'brand_only_now', 'price_looks_off', 'shortage_incorrect'
+    )),
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_flags_rxcui ON data_flags(rxcui, issue_type);
 CREATE INDEX IF NOT EXISTS idx_shortages_generic ON drug_shortages(generic_name);
 
 -- 5. Alert Events Table: Detected commercial generic launches, price drops, and shortages

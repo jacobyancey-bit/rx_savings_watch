@@ -44,27 +44,52 @@ function formatFdaDate(raw) {
  * 1. NLM RxNav: Resolve a drug name to a canonical RxNorm concept (preferring SBD/SCD).
  */
 async function fetchRxNormConcept(brandName, genericName) {
-  const query = encodeURIComponent(brandName || genericName);
-  const data = await fetchJsonSafe(`https://rxnav.nlm.nih.gov/REST/drugs.json?name=${query}`);
-  const groups = data?.drugGroup?.conceptGroup || [];
+  const candidates = [
+    brandName,
+    brandName ? brandName.split(' ')[0] : null,
+    genericName,
+    genericName ? genericName.split(/[,/]/)[0].trim() : null,
+  ].filter(Boolean);
 
-  // Prefer Semantic Branded Drug (SBD), fallback to Semantic Clinical Drug (SCD)
-  const preferredOrder = ['SBD', 'SCD', 'BPCK', 'GPCK'];
-  for (const tty of preferredOrder) {
-    const group = groups.find(g => g.tty === tty && Array.isArray(g.conceptProperties) && g.conceptProperties.length > 0);
-    if (group) {
-      const prop = group.conceptProperties[0];
-      const fullName = prop.name || '';
-      const strengthMatch = fullName.match(/\b(\d+(?:\.\d+)?\s*(?:MG|MCG|ML|G|%|UNT)(?:\s*\/\s*\d+(?:\.\d+)?\s*(?:ML|MG|ACTUAT))?)\b/i);
-      const formMatch = fullName.match(/\b(Oral Tablet|Oral Capsule|Injectable Solution|Auto-Injector|Subcutaneous Solution|Ophthalmic Solution|Inhalation Powder|Metered Dose Inhaler|Delayed Release Oral Capsule|Extended Release Oral Tablet)\b/i);
-      return {
-        rxcui: String(prop.rxcui),
-        strength: strengthMatch ? strengthMatch[1].toLowerCase() : null,
-        dosage_form: formMatch ? formMatch[1].toLowerCase() : null,
-      };
+  for (const candidate of candidates) {
+    const query = encodeURIComponent(candidate);
+    const data = await fetchJsonSafe(`https://rxnav.nlm.nih.gov/REST/drugs.json?name=${query}`);
+    const groups = data?.drugGroup?.conceptGroup || [];
+
+    const preferredOrder = ['SBD', 'SCD', 'BPCK', 'GPCK'];
+    for (const tty of preferredOrder) {
+      const group = groups.find(g => g.tty === tty && Array.isArray(g.conceptProperties) && g.conceptProperties.length > 0);
+      if (group) {
+        const prop = group.conceptProperties[0];
+        const fullName = prop.name || '';
+        const strengthMatch = fullName.match(/\b(\d+(?:\.\d+)?\s*(?:MG|MCG|ML|G|%|UNT)(?:\s*\/\s*\d+(?:\.\d+)?\s*(?:ML|MG|ACTUAT))?)\b/i);
+        const formMatch = fullName.match(/\b(Oral Tablet|Oral Capsule|Injectable Solution|Auto-Injector|Subcutaneous Solution|Ophthalmic Solution|Inhalation Powder|Metered Dose Inhaler|Delayed Release Oral Capsule|Extended Release Oral Tablet)\b/i);
+        return {
+          rxcui: String(prop.rxcui),
+          strength: strengthMatch ? strengthMatch[1].toLowerCase() : null,
+          dosage_form: formMatch ? formMatch[1].toLowerCase() : null,
+        };
+      }
     }
   }
   return null;
+}
+
+/**
+ * 1b. NLM RxNav: Fetch canonical sorted Ingredient (IN) names for an RxCUI.
+ * Enables order-independent, salt-independent cross-referencing for multi-ingredient drugs.
+ */
+async function fetchRxNormIngredients(rxcui) {
+  if (!rxcui) return [];
+  const data = await fetchJsonSafe(`https://rxnav.nlm.nih.gov/REST/rxcui/${encodeURIComponent(rxcui)}/related.json?tty=IN`);
+  const groups = data?.relatedGroup?.conceptGroup || [];
+  const names = [];
+  for (const g of groups) {
+    for (const prop of g.conceptProperties || []) {
+      if (prop.name) names.push(prop.name.toLowerCase().trim());
+    }
+  }
+  return [...new Set(names)].sort();
 }
 
 /**
@@ -130,13 +155,16 @@ async function fetchOpenFdaNdcs(genericName) {
   );
   let results = data?.results || [];
 
-  const hasCommercialAnda = results.some(r => (r.marketing_category || '').includes('ANDA'));
-  if (!hasCommercialAnda && genericName.includes(',')) {
-    const primaryIngredient = genericName.split(',')[0].replace(/\band\b/gi, '').trim();
+  const hasCommercialAnda = results.some(r => {
+    const c = (r.marketing_category || '').toUpperCase();
+    return c.includes('ANDA') || c.includes('AUTHORIZED GENERIC');
+  });
+  if (!hasCommercialAnda && (genericName.includes(',') || genericName.includes(' and ') || genericName.includes('/'))) {
+    const primaryIngredient = genericName.split(/[,/]| and /i)[0].trim();
     if (primaryIngredient.length >= 4) {
       const ingTerm = encodeURIComponent(`"${primaryIngredient}"`);
       const fallback = await fetchJsonSafe(
-        `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+marketing_category:"ANDA"+AND+active_ingredients.name:${ingTerm}&limit=25`
+        `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+(marketing_category:"ANDA"+OR+marketing_category:"NDA+AUTHORIZED+GENERIC")+AND+active_ingredients.name:${ingTerm}&limit=25`
       );
       if (fallback?.results?.length) {
         results = [...results, ...fallback.results];
@@ -232,14 +260,20 @@ async function ingestLiveDrug(db, seed) {
   const drugRow = db.prepare('SELECT id FROM drugs WHERE rxcui = ?').get(rxcui);
   const drugId = drugRow.id;
 
-  // Fetch all 4 drug-specific cross-reference feeds in parallel!
-  const [fdaApps, ndcRows, nadacGenericRows, nadacBrandRows, dailyMedRows] = await Promise.all([
+  // Fetch all drug-specific cross-reference feeds in parallel (including RxNorm canonical IN set)
+  const [fdaApps, ndcRows, nadacGenericRows, nadacBrandRows, dailyMedRows, rxIngredients] = await Promise.all([
     fetchDrugsAtFda(genericName, brandName),
     fetchOpenFdaNdcs(genericName),
     fetchCmsNadacPrices(genericName),
     brandName ? fetchCmsNadacPrices(brandName) : Promise.resolve([]),
     fetchDailyMedSpls(genericName),
+    fetchRxNormIngredients(rxcui),
   ]);
+
+  if (rxIngredients.length > 0) {
+    db.prepare("UPDATE drugs SET active_ingredient = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(rxIngredients.join(' / '), drugId);
+  }
 
   let regulatoryCount = 0;
   let ndcCount = 0;
@@ -312,14 +346,31 @@ async function ingestLiveDrug(db, seed) {
   for (const item of ndcRows) {
     const ndc = item.product_ndc;
     if (!ndc) continue;
-    const cat = item.marketing_category || '';
-    const normCat = cat.includes('ANDA')
-      ? 'ANDA'
-      : cat.includes('BLA')
-        ? 'BLA'
-        : cat.includes('NDA')
-          ? 'NDA'
-          : cat;
+    const cat = (item.marketing_category || '').toUpperCase();
+    const normCat = cat.includes('AUTHORIZED GENERIC')
+      ? 'AUTHORIZED_GENERIC'
+      : cat.includes('ANDA')
+        ? 'ANDA'
+        : cat.includes('BLA')
+          ? 'BLA'
+          : cat.includes('NDA')
+            ? 'NDA'
+            : cat;
+
+    // If FDA lists an Authorized Generic under the brand's NDA, record equivalent generic approval
+    if (normCat === 'AUTHORIZED_GENERIC') {
+      upsertGeneric.run(
+        drugId,
+        'orange_book',
+        `AUTH-GEN-${ndc}`,
+        item.labeler_name || 'Authorized Generic',
+        formatFdaDate(item.marketing_start_date),
+        1,
+        'AB',
+        null
+      );
+      regulatoryCount++;
+    }
 
     upsertNdc.run(
       drugId,
@@ -632,10 +683,11 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
   const allStrengths = extractCleanStrengths(results, rxConcepts);
   const combinedStrengths = allStrengths.slice(0, 12).join(', ') || null;
 
-  // Check if this canonical drug already exists (unless forceRefresh requested)
-  const existing = db.prepare(
-    'SELECT * FROM drugs WHERE LOWER(generic_name) = LOWER(?) OR (brand_name IS NOT NULL AND LOWER(brand_name) = LOWER(?))'
-  ).get(canonicalGeneric, canonicalBrand || '');
+  // Check if this canonical drug already exists (match by brand_name when present so distinct brands
+  // sharing ingredients like Mydayis vs Adderall XR never collide!)
+  const existing = canonicalBrand
+    ? db.prepare('SELECT * FROM drugs WHERE LOWER(brand_name) = LOWER(?)').get(canonicalBrand)
+    : db.prepare('SELECT * FROM drugs WHERE brand_name IS NULL AND LOWER(generic_name) = LOWER(?)').get(canonicalGeneric);
 
   if (existing && !options.forceRefresh) {
     if (combinedStrengths && combinedStrengths.length > (existing.strength || '').length) {

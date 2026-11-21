@@ -123,4 +123,23 @@ class ApiService {
       'updates_found': filteredDrugs.fold<int>(0, (sum, d) => sum + ((d['new_alerts_count'] as int?) ?? 0)),
     };
   }
+
+  /// Submit a strictly anonymous, zero-PII data quality flag (enum only, no free text)
+  Future<bool> submitDataQualityFlag({
+    required String rxcui,
+    required String issueType,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/drugs/$rxcui/flag'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'issue_type': issueType}),
+          )
+          .timeout(const Duration(seconds: 10));
+      return response.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
 }

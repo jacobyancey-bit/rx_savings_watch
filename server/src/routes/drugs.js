@@ -3,6 +3,13 @@ const config = require('../config');
 const { discoverAndIngestDrug } = require('../ingestion/live_feeds');
 
 const RXCUI_PATTERN = /^\d{1,12}$/;
+const ALLOWED_FLAG_TYPES = new Set([
+  'missing_dosage',
+  'generic_available',
+  'brand_only_now',
+  'price_looks_off',
+  'shortage_incorrect',
+]);
 const NEGATIVE_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_CACHE_ENTRIES = 500;
 
@@ -145,6 +152,48 @@ function createDrugsRouter(db) {
       market_availability: market,
       shortages,
       alerts
+    });
+  });
+
+  // Zero-PII anonymous data quality flag endpoint (strict enum, no free-text)
+  const insertFlagStmt = db.prepare(`
+    INSERT INTO data_flags (drug_id, rxcui, issue_type)
+    VALUES (?, ?, ?)
+  `);
+
+  router.post('/drugs/:rxcui/flag', (req, res) => {
+    const rxcui = String(req.params.rxcui || '').trim();
+    if (!RXCUI_PATTERN.test(rxcui)) {
+      return res.status(400).json({ error: 'Bad Request', message: 'Invalid RxCUI format.' });
+    }
+
+    const issueType = String(req.body?.issue_type || '').trim();
+    if (!ALLOWED_FLAG_TYPES.has(issueType)) {
+      return res.status(400).json({ error: 'Bad Request', message: 'Invalid issue_type.' });
+    }
+
+    const drug = getDrugByRxcui.get(rxcui);
+    if (!drug) {
+      return res.status(404).json({ error: 'Drug not found' });
+    }
+
+    insertFlagStmt.run(drug.id, rxcui, issueType);
+
+    // Self-healing: if user flagged missing dosage or generic availability, trigger background refresh
+    if (
+      (issueType === 'missing_dosage' || issueType === 'generic_available') &&
+      process.env.NODE_ENV !== 'test'
+    ) {
+      const clientIp = req.ip || 'unknown';
+      if (canRunLiveDiscoveryForIp(clientIp)) {
+        discoverAndIngestDrug(db, drug.brand_name || drug.generic_name, { forceRefresh: true })
+          .catch(err => console.error('[DrugsRouter] Flag-triggered refresh error:', err.message));
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Thank you. Flag recorded anonymously with zero personal data.'
     });
   });
 

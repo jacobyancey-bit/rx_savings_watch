@@ -127,6 +127,7 @@ function createCheckUpdatesRouter(db) {
         (!m.marketing_end_date || m.marketing_end_date >= today) &&
         !isBrandRow(m) && (
           m.marketing_category === 'ANDA' || 
+          m.marketing_category === 'AUTHORIZED_GENERIC' ||
           (m.marketing_category === 'BLA' && drug.drug_type === 'biologic') ||
           m.source === 'cms_nadac'
         )

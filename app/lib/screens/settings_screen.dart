@@ -481,8 +481,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         context: context,
                         builder: (ctx) => AlertDialog(
                           title: const Text('Erase Medication List?'),
-                          content: const Text(
-                            'This will remove all saved medications from this phone. You can add them back anytime.',
+                          content: Text(
+                            kIsWeb
+                                ? 'This will remove all saved medications from this browser. You can add them back anytime.'
+                                : 'This will remove all saved medications from this phone. You can add them back anytime.',
                           ),
                           actions: [
                             TextButton(
@@ -501,7 +503,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         await cabinet.clearAllData();
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('All saved medications erased from this phone.')),
+                            SnackBar(
+                              content: Text(
+                                kIsWeb
+                                    ? 'All saved medications erased from this browser.'
+                                    : 'All saved medications erased from this phone.',
+                              ),
+                            ),
                           );
                         }
                       }

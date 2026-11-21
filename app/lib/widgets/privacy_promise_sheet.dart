@@ -162,7 +162,9 @@ class PrivacyPromiseSheet extends StatelessWidget {
                 context,
                 icon: Icons.delete_sweep_outlined,
                 title: 'You Are Always in Control',
-                description: 'You can erase your entire medicine list from this phone with one tap in Settings at any time.',
+                description: kIsWeb
+                    ? 'You can erase your entire medicine list from this browser with one click in Settings at any time.'
+                    : 'You can erase your entire medicine list from this phone with one tap in Settings at any time.',
               ),
               const SizedBox(height: 20),
               SizedBox(

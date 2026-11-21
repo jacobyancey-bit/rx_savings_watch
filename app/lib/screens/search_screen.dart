@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/drug.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
+import '../services/bottle_scanner_service.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -14,11 +15,13 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _controller = TextEditingController();
+  final BottleScannerService _scannerService = BottleScannerService();
   Timer? _debounce;
   List<Drug> _allCatalogDrugs = [];
   List<Drug> _filteredDrugs = [];
   bool _isLoading = true;
   bool _isLiveSearching = false;
+  bool _isScanningBottle = false;
   String? _liveSearchNote;
   String? _errorMessage;
 
@@ -140,6 +143,56 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  Future<void> _scanPillBottle() async {
+    if (_isScanningBottle) return;
+    setState(() => _isScanningBottle = true);
+
+    try {
+      final result = await _scannerService.scanBottleAndDeletePhoto(_allCatalogDrugs);
+      if (!mounted) return;
+
+      if (result == null) {
+        // User canceled camera
+        setState(() => _isScanningBottle = false);
+        return;
+      }
+
+      if (result.matchedCatalogDrug != null) {
+        final drug = result.matchedCatalogDrug!;
+        _controller.text = drug.displayName;
+        setState(() {
+          _filteredDrugs = [drug];
+          _isScanningBottle = false;
+          _liveSearchNote = 'Photo immediately deleted. Matched "${drug.displayName}" from label.';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Photo deleted — found ${drug.displayName}')),
+        );
+      } else if (result.queryTerm != null && result.queryTerm!.isNotEmpty) {
+        final term = result.queryTerm!;
+        _controller.text = term;
+        setState(() {
+          _isScanningBottle = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Photo deleted — searching official FDA database for "$term"')),
+        );
+        await _searchLiveFederalDatabases(term);
+      } else {
+        setState(() {
+          _isScanningBottle = false;
+          _liveSearchNote = 'Photo immediately deleted. Could not read a medication name — try holding the bottle closer or typing the name above.';
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isScanningBottle = false;
+        _liveSearchNote = 'Could not open camera. Please check camera permission or type the medication name.';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cabinetProvider = context.watch<CabinetProvider>();
@@ -182,6 +235,30 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
           ),
+          if (BottleScannerService.isSupported)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: FilledButton.tonalIcon(
+                  onPressed: _isScanningBottle ? null : _scanPillBottle,
+                  icon: _isScanningBottle
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.camera_alt_outlined),
+                  label: Text(
+                    _isScanningBottle
+                        ? 'Reading label & deleting photo...'
+                        : 'Scan Pill Bottle (Photo Auto-Deleted)',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
           if (_liveSearchNote != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

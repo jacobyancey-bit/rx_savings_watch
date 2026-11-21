@@ -1,15 +1,15 @@
 /**
- * On-Device Zero-PII Pill Bottle Scanner (v4 — Industry-Standard Auto-Capture)
+ * On-Device Zero-PII Pill Bottle Live Rotate-to-Scan (v6)
  *
- * Implements the standard mobile document/label auto-capture pipeline:
- * 1. Motion stability gate (frame-to-frame thumbnail diff) — waits until hand is steady.
- * 2. Focus sharpness gate (Laplacian edge variance) — skips blurry/autofocus-hunting frames.
- * 3. Temporal consensus (2 agreeing frames required) — eliminates single-frame OCR misreads.
- * 4. Visual state machine: Teal (aim) -> Amber (verifying 1/2) -> Green (confirmed 2/2).
- *
- * Privacy guarantee:
- * - Single reusable Tesseract.js v5 WebAssembly worker runs 100% locally in the browser.
- * - Photo pixels NEVER leave the device and every frame canvas is wiped immediately.
+ * Designed specifically for curved round prescription vials where the drug name
+ * and dosage (mg) wrap around the bottle:
+ * - Shows 2 live progress pills: [ Medication ] and [ Dosage (mg) ].
+ * - Locks the medication name as soon as it's confirmed (2-of-3 frames),
+ *   then invites the user to slowly rotate the bottle to pick up the mg
+ *   (or tap "Open Now" immediately).
+ * - If both name + mg fit in one frame (flat box/bottle), both lock together.
+ * - Single reusable Tesseract.js v5 WASM worker runs 100% locally in the browser;
+ *   photo pixels NEVER leave the device and every frame canvas is wiped immediately.
  */
 (function () {
   let tesseractLoadPromise = null;
@@ -114,90 +114,44 @@
     }
   }
 
-  /**
-   * Computes a tiny 64x24 grayscale thumbnail for fast motion stability & sharpness checks.
-   */
-  function analyzeFrameQuality(canvas, prevThumb) {
-    const tw = 64;
-    const th = 24;
-    const small = document.createElement('canvas');
-    small.width = tw;
-    small.height = th;
-    const sctx = small.getContext('2d', { willReadFrequently: true });
-    sctx.drawImage(canvas, 0, 0, tw, th);
-    const pixels = sctx.getImageData(0, 0, tw, th).data;
-    wipeCanvas(small);
-
-    const thumb = new Uint8Array(tw * th);
-    for (let i = 0, p = 0; i < pixels.length; i += 4, p++) {
-      thumb[p] = pixels[i]; // already grayscale after enhanceCanvasForOcr
-    }
-
-    // 1. Motion stability: mean absolute pixel difference vs previous frame
-    let motionDiff = 0;
-    if (prevThumb && prevThumb.length === thumb.length) {
-      let sum = 0;
-      for (let i = 0; i < thumb.length; i++) {
-        sum += Math.abs(thumb[i] - prevThumb[i]);
-      }
-      motionDiff = sum / thumb.length;
-    }
-
-    // 2. Focus sharpness: Laplacian edge variance on interior pixels
-    let lapSum = 0;
-    let lapSqSum = 0;
-    let count = 0;
-    for (let y = 1; y < th - 1; y++) {
-      for (let x = 1; x < tw - 1; x++) {
-        const idx = y * tw + x;
-        const lap =
-          -4 * thumb[idx] +
-          thumb[idx - 1] +
-          thumb[idx + 1] +
-          thumb[idx - tw] +
-          thumb[idx + tw];
-        lapSum += lap;
-        lapSqSum += lap * lap;
-        count++;
-      }
-    }
-    const mean = lapSum / Math.max(1, count);
-    const sharpness = lapSqSum / Math.max(1, count) - mean * mean;
-
-    return { thumb, motionDiff, sharpness };
+  function extractStrengthOnly(text, confidence) {
+    if (!text || confidence < 30) return null;
+    const upper = text.toUpperCase();
+    const m = upper.match(/\b(\d{1,4}(?:\.\d{1,2})?)\s*(MG|M6|MQ|MCG|ML|GM|G|%)\b/);
+    if (!m) return null;
+    const val = parseFloat(m[1]);
+    if (!Number.isFinite(val) || val <= 0 || val > 5000) return null;
+    let unit = m[2];
+    if (unit === 'M6' || unit === 'MQ') unit = 'MG';
+    if (unit === 'GM') unit = 'G';
+    return unit === '%' ? m[1] + '%' : m[1] + ' ' + unit;
   }
 
-  /**
-   * Extracts a normalized consensus key + display label from an OCR result.
-   * Returns null if confidence or text quality is too weak for auto-capture.
-   */
-  function extractConsensusCandidate(text, confidence) {
+  function extractDrugCandidate(text, confidence) {
     if (!text) return null;
     const trimmed = text.trim();
     if (trimmed.length < 4) return null;
     const upper = trimmed.toUpperCase();
 
-    // Extract normalized strength if present
-    const strMatch = upper.match(/\b(\d+(?:\.\d+)?)\s*(MG|M6|MQ|MCG|ML|GM|G|%)\b/);
-    let strength = '';
-    if (strMatch) {
-      let u = strMatch[2];
-      if (u === 'M6' || u === 'MQ') u = 'MG';
-      strength = strMatch[1] + ' ' + u;
+    // 1. Valid NDC code
+    if (confidence >= 38) {
+      const ndcMatch = trimmed.match(/\b\d{4,5}-\d{3,4}(?:-\d{1,2})?\b/);
+      if (ndcMatch) {
+        return { key: ndcMatch[0], display: 'NDC ' + ndcMatch[0], isNdc: true };
+      }
     }
 
-    // 1. Known pharmacy abbreviation or canonical prefix (requires confidence >= 35)
-    if (confidence >= 35) {
+    // 2. Known pharmacy abbreviation or canonical prefix (e.g. AMPHET/DEXTR, ATORVAST)
+    if (confidence >= 32) {
       for (const prefix of KNOWN_RX_PREFIXES) {
         if (upper.includes(prefix)) {
-          const display = strength ? prefix + ' ' + strength : prefix;
-          return { key: prefix, display, hasStrength: Boolean(strength) };
+          return { key: prefix, display: prefix, isNdc: false };
         }
       }
     }
 
-    // 2. Explicit "<DRUG> <NUMBER> MG/MCG/ML" line (requires confidence >= 38)
-    if (confidence >= 38) {
+    // 3. Explicit "<DRUG> <NUMBER> MG/MCG/ML" line
+    if (confidence >= 36) {
       const dosageMatch = trimmed.match(
         /\b([A-Za-z][A-Za-z\-\/]{3,24}(?:\s+[A-Za-z][A-Za-z\-\/]{2,18})?)\s+(\d+(?:\.\d+)?)\s*(MG|M6|MQ|MCG|ML|GM|G|%)\b/i
       );
@@ -205,24 +159,12 @@
         const drugPart = dosageMatch[1].trim().toUpperCase();
         const firstWord = drugPart.split(/\s+/)[0];
         if (!IGNORED_AUTO_WORDS.has(firstWord) && firstWord.length >= 4) {
-          const unit = (dosageMatch[3].toUpperCase() === 'M6' || dosageMatch[3].toUpperCase() === 'MQ')
-            ? 'MG'
-            : dosageMatch[3].toUpperCase();
-          const disp = drugPart + ' ' + dosageMatch[2] + ' ' + unit;
-          return { key: firstWord, display: disp, hasStrength: true };
+          return { key: firstWord, display: drugPart, isNdc: false };
         }
       }
     }
 
-    // 3. Valid NDC code (requires confidence >= 40)
-    if (confidence >= 40) {
-      const ndcMatch = trimmed.match(/\b\d{4,5}-\d{3,4}(?:-\d{1,2})?\b/);
-      if (ndcMatch) {
-        return { key: ndcMatch[0], display: 'NDC ' + ndcMatch[0], hasStrength: true };
-      }
-    }
-
-    // 4. Clean high-confidence medication word (requires confidence >= 52)
+    // 4. Clean high-confidence medication word (5+ letters)
     if (confidence >= 52) {
       const words = trimmed
         .replace(/[^A-Za-z\-\/\s]/g, ' ')
@@ -230,8 +172,7 @@
         .filter((w) => /^[A-Za-z][A-Za-z\-\/]{4,24}$/.test(w) && !IGNORED_AUTO_WORDS.has(w.toUpperCase()));
       if (words.length >= 1) {
         const key = words[0].toUpperCase();
-        const disp = words.slice(0, 2).join(' ').toUpperCase() + (strength ? ' ' + strength : '');
-        return { key, display: disp, hasStrength: Boolean(strength) };
+        return { key, display: words.slice(0, 2).join(' ').toUpperCase(), isNdc: false };
       }
     }
 
@@ -430,37 +371,51 @@
 
       const topTip = document.createElement('div');
       topTip.style.cssText =
-        'background:rgba(0,0,0,0.76);padding:12px 16px;border-radius:14px;text-align:center;' +
-        'max-width:420px;margin-bottom:18px;border:1px solid rgba(255,255,255,0.18);';
+        'background:rgba(0,0,0,0.78);padding:12px 16px;border-radius:14px;text-align:center;' +
+        'max-width:420px;margin-bottom:12px;border:1px solid rgba(255,255,255,0.18);';
       topTip.innerHTML =
-        '<div style="font-size:17px;font-weight:700;color:#5eead4;margin-bottom:4px;">Hold MEDICATION NAME + MG steady</div>' +
-        '<div style="font-size:13.5px;line-height:1.35;color:#f1f5f9;">Auto-captures once focused and verified across 2 steady frames.</div>';
+        '<div style="font-size:16.5px;font-weight:700;color:#5eead4;margin-bottom:4px;">Hold &amp; slowly rotate bottle</div>' +
+        '<div style="font-size:13px;line-height:1.35;color:#f1f5f9;">Reads the drug name first, then rotate slightly for the MG — works on curved bottles!</div>';
+
+      // Two live progress pills: Medication + Dosage
+      const pillRow = document.createElement('div');
+      pillRow.style.cssText =
+        'display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:14px;';
+
+      const drugPill = document.createElement('div');
+      drugPill.style.cssText =
+        'background:rgba(15,23,42,0.85);border:1.5px solid rgba(255,255,255,0.3);color:#e2e8f0;' +
+        'padding:6px 12px;border-radius:999px;font-size:12.5px;font-weight:700;';
+      drugPill.textContent = '1. Medication: scanning...';
+
+      const dosePill = document.createElement('div');
+      dosePill.style.cssText =
+        'background:rgba(15,23,42,0.85);border:1.5px solid rgba(255,255,255,0.3);color:#e2e8f0;' +
+        'padding:6px 12px;border-radius:999px;font-size:12.5px;font-weight:700;';
+      dosePill.textContent = '2. Dosage (mg): waiting';
+
+      pillRow.appendChild(drugPill);
+      pillRow.appendChild(dosePill);
 
       const guideBox = document.createElement('div');
       guideBox.style.cssText =
         'width:min(88vw,440px);height:118px;border:3px solid #2dd4bf;border-radius:14px;' +
         'box-shadow:0 0 0 9999px rgba(0,0,0,0.62);position:relative;background:transparent;transition:border-color 0.2s ease;';
 
-      const exampleHint = document.createElement('div');
-      exampleHint.style.cssText =
-        'position:absolute;bottom:-32px;left:0;right:0;text-align:center;font-size:12.5px;' +
-        'color:#e2e8f0;text-shadow:0 1px 3px #000;font-weight:600;';
-      exampleHint.textContent = 'Frame drug name + strength (e.g. AMPHET/DEXTR 20 MG)';
-      guideBox.appendChild(exampleHint);
-
       const statusBadge = document.createElement('div');
       statusBadge.style.cssText =
-        'margin-top:46px;background:rgba(5,120,115,0.92);padding:8px 16px;border-radius:20px;' +
+        'margin-top:20px;background:rgba(5,120,115,0.92);padding:8px 16px;border-radius:20px;' +
         'font-size:12.5px;font-weight:600;color:#ffffff;text-align:center;max-width:90vw;transition:background 0.2s ease;';
       statusBadge.textContent = 'Starting on-device scanner...';
 
       centerWrap.appendChild(topTip);
+      centerWrap.appendChild(pillRow);
       centerWrap.appendChild(guideBox);
       centerWrap.appendChild(statusBadge);
 
       const controls = document.createElement('div');
       controls.style.cssText =
-        'position:relative;z-index:3;background:rgba(0,0,0,0.85);padding:16px 20px calc(18px + env(safe-area-inset-bottom, 0px));' +
+        'position:relative;z-index:3;background:rgba(0,0,0,0.86);padding:16px 20px calc(18px + env(safe-area-inset-bottom, 0px));' +
         'display:flex;align-items:center;justify-content:space-between;gap:12px;';
 
       const cancelBtn = document.createElement('button');
@@ -468,14 +423,14 @@
       cancelBtn.textContent = 'Cancel';
       cancelBtn.style.cssText =
         'background:rgba(255,255,255,0.14);color:#fff;border:none;border-radius:12px;' +
-        'padding:14px 18px;font-size:15px;font-weight:600;cursor:pointer;min-width:86px;';
+        'padding:14px 18px;font-size:15px;font-weight:600;cursor:pointer;min-width:84px;';
 
-      const snapBtn = document.createElement('button');
-      snapBtn.type = 'button';
-      snapBtn.textContent = 'Snap Now';
-      snapBtn.style.cssText =
-        'flex:1;max-width:220px;background:#0d9488;color:#fff;border:2px solid #5eead4;border-radius:999px;' +
-        'padding:15px 22px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(13,148,136,0.45);';
+      const actionBtn = document.createElement('button');
+      actionBtn.type = 'button';
+      actionBtn.textContent = 'Snap Now';
+      actionBtn.style.cssText =
+        'flex:1;max-width:240px;background:#0d9488;color:#fff;border:2px solid #5eead4;border-radius:999px;' +
+        'padding:15px 18px;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(13,148,136,0.45);';
 
       const fallbackBtn = document.createElement('button');
       fallbackBtn.type = 'button';
@@ -483,10 +438,10 @@
       fallbackBtn.title = 'Use phone photo picker instead';
       fallbackBtn.style.cssText =
         'background:rgba(255,255,255,0.14);color:#fff;border:none;border-radius:12px;' +
-        'padding:14px 16px;font-size:14px;font-weight:600;cursor:pointer;min-width:74px;';
+        'padding:14px 16px;font-size:14px;font-weight:600;cursor:pointer;min-width:72px;';
 
       controls.appendChild(cancelBtn);
-      controls.appendChild(snapBtn);
+      controls.appendChild(actionBtn);
       controls.appendChild(fallbackBtn);
 
       overlay.appendChild(video);
@@ -497,8 +452,18 @@
       let closed = false;
       let manualBusy = false;
       let autoLoopTimer = null;
-      // 2-of-3 rolling temporal consensus window
-      const recentHits = [];
+
+      // Rolling consensus + rotate-to-accumulate state
+      const recentDrugHits = [];
+      let lockedDrug = null;      // { key, display, rawText }
+      let lockedStrength = null;  // e.g. "20 MG"
+
+      const markPillLocked = (el, text) => {
+        el.style.background = 'rgba(22,163,74,0.92)';
+        el.style.borderColor = '#86efac';
+        el.style.color = '#ffffff';
+        el.textContent = '✓ ' + text;
+      };
 
       const setStateUi = (state, msg) => {
         if (closed) return;
@@ -537,14 +502,26 @@
         resolve(payload);
       };
 
+      const finishCombined = () => {
+        const combined =
+          (lockedDrug ? lockedDrug.rawText : '') +
+          (lockedStrength ? '\n' + lockedStrength : '');
+        finish({ type: 'text', text: combined.trim() });
+      };
+
       cancelBtn.addEventListener('click', () => finish({ type: 'canceled' }));
       fallbackBtn.addEventListener('click', () => finish({ type: 'fallback' }));
 
-      snapBtn.addEventListener('click', async () => {
+      actionBtn.addEventListener('click', async () => {
         if (closed || manualBusy) return;
+        // If drug is already locked, tapping the button opens it immediately!
+        if (lockedDrug) {
+          finishCombined();
+          return;
+        }
         manualBusy = true;
-        snapBtn.disabled = true;
-        snapBtn.textContent = 'Reading...';
+        actionBtn.disabled = true;
+        actionBtn.textContent = 'Reading...';
         setStateUi('verifying', 'Reading label on-device...');
 
         const canvas = captureGuideBoxCanvas(video, guideBox);
@@ -554,7 +531,8 @@
         }
         try {
           const { text } = await recognizeCanvas(canvas);
-          finish({ type: 'text', text });
+          const combined = text + (lockedStrength ? '\n' + lockedStrength : '');
+          finish({ type: 'text', text: combined });
         } catch (_) {
           finish({ type: 'text', text: '' });
         } finally {
@@ -570,37 +548,72 @@
         try {
           await getWorker();
           if (closed) return;
-          setStateUi('aim', 'Hold bottle steady inside box...');
+          setStateUi('aim', 'Point at the medication name inside the box');
 
           const runAutoTick = async () => {
             if (closed || manualBusy) return;
             const canvas = captureGuideBoxCanvas(video, guideBox);
             if (canvas) {
               try {
-                // Run OCR directly and use 2-of-3 rolling frame consensus to confirm
-                // steadiness, focus, and accuracy without deadlocking on sensor noise.
                 const { text, confidence } = await recognizeCanvas(canvas);
                 if (!closed && !manualBusy) {
-                  const cand = extractConsensusCandidate(text, confidence);
-                  if (cand) {
-                    recentHits.push({ key: cand.key, display: cand.display, text, hasStrength: cand.hasStrength });
-                    if (recentHits.length > 3) recentHits.shift();
+                  // A. Check for dosage strength on ANY frame (even while rotating!)
+                  const foundStrength = extractStrengthOnly(text, confidence);
+                  if (foundStrength && !lockedStrength) {
+                    lockedStrength = foundStrength;
+                    markPillLocked(dosePill, foundStrength);
+                  }
 
-                    const matching = recentHits.filter((h) => h.key === cand.key);
-                    if (matching.length >= 2) {
-                      const bestHit = matching.find((h) => h.hasStrength) || matching[matching.length - 1];
-                      setStateUi('confirmed', 'Confirmed: ' + bestHit.display + ' — Opening...');
-                      setTimeout(() => finish({ type: 'text', text: bestHit.text }), 220);
-                      return;
+                  // B. If drug name not locked yet, run 2-of-3 consensus
+                  if (!lockedDrug) {
+                    const cand = extractDrugCandidate(text, confidence);
+                    if (cand) {
+                      recentDrugHits.push({ key: cand.key, display: cand.display, isNdc: cand.isNdc, rawText: text });
+                      if (recentDrugHits.length > 3) recentDrugHits.shift();
+
+                      const matching = recentDrugHits.filter((h) => h.key === cand.key);
+                      if (matching.length >= 2) {
+                        lockedDrug = matching[matching.length - 1];
+                        markPillLocked(drugPill, lockedDrug.display);
+
+                        // If it's an NDC or we ALREADY have the mg strength, open immediately!
+                        if (lockedDrug.isNdc || lockedStrength) {
+                          setStateUi(
+                            'confirmed',
+                            'Confirmed: ' + lockedDrug.display + (lockedStrength ? ' ' + lockedStrength : '') + ' — Opening...'
+                          );
+                          setTimeout(finishCombined, 260);
+                          return;
+                        }
+
+                        // Otherwise invite user to rotate slightly for the MG (or tap Open Now!)
+                        actionBtn.textContent = 'Open ' + lockedDrug.display + ' Now';
+                        actionBtn.style.background = '#16a34a';
+                        actionBtn.style.borderColor = '#86efac';
+                        setStateUi('verifying', 'Got ' + lockedDrug.display + '! Slowly rotate bottle to show MG (or tap Open)');
+                      } else {
+                        setStateUi('verifying', 'Hold steady — verifying ' + cand.display + ' (1/2)...');
+                      }
+                    } else {
+                      recentDrugHits.push({ key: null });
+                      if (recentDrugHits.length > 3) recentDrugHits.shift();
+                      if (!recentDrugHits.some((h) => h.key !== null)) {
+                        setStateUi(
+                          'aim',
+                          lockedStrength
+                            ? 'Got ' + lockedStrength + '! Slowly rotate to show medication name'
+                            : 'Point at the medication name inside the box'
+                        );
+                      }
                     }
-                    setStateUi('verifying', 'Hold steady — verifying ' + cand.display + ' (1/2)...');
-                  } else {
-                    recentHits.push({ key: null });
-                    if (recentHits.length > 3) recentHits.shift();
-                    const anyPending = recentHits.find((h) => h.key !== null);
-                    if (!anyPending) {
-                      setStateUi('aim', 'Align medication name & mg inside the box');
-                    }
+                  } else if (lockedStrength) {
+                    // Both Medication AND Dosage are now locked after rotating!
+                    setStateUi(
+                      'confirmed',
+                      'Confirmed: ' + lockedDrug.display + ' ' + lockedStrength + ' — Opening...'
+                    );
+                    setTimeout(finishCombined, 260);
+                    return;
                   }
                 }
               } catch (_) {
@@ -609,12 +622,11 @@
               }
             }
             if (!closed && !manualBusy) {
-              autoLoopTimer = setTimeout(runAutoTick, 700);
+              autoLoopTimer = setTimeout(runAutoTick, 650);
             }
           };
 
-          // Allow 900ms for initial camera exposure & autofocus before first check
-          autoLoopTimer = setTimeout(runAutoTick, 900);
+          autoLoopTimer = setTimeout(runAutoTick, 700);
         } catch (_) {
           if (!closed) {
             setStateUi('aim', 'Tap "Snap Now" when the drug name is in the box');

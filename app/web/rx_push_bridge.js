@@ -4,6 +4,7 @@
   const STORE_NAME = 'cabinet';
   const KEY_WATCHED = 'watched_rxcuis';
   const SW_PATH = '/rx-push-sw.js';
+  const SW_SCOPE = '/rx-push/';
 
   function openDb() {
     return new Promise((resolve, reject) => {
@@ -32,9 +33,9 @@
 
   async function getRegistration() {
     if (!('serviceWorker' in navigator)) return null;
-    const existing = await navigator.serviceWorker.getRegistration(SW_PATH);
+    const existing = await navigator.serviceWorker.getRegistration(SW_SCOPE);
     if (existing) return existing;
-    return await navigator.serviceWorker.register(SW_PATH, { scope: '/' });
+    return await navigator.serviceWorker.register(SW_PATH, { scope: SW_SCOPE });
   }
 
   window.rxPush = {
@@ -50,7 +51,7 @@
       if (!this.isSupported()) return 'unsupported';
       if (Notification.permission === 'denied') return 'denied';
       try {
-        const reg = await navigator.serviceWorker.getRegistration(SW_PATH);
+        const reg = await navigator.serviceWorker.getRegistration(SW_SCOPE);
         if (!reg) return 'unsubscribed';
         const sub = await reg.pushManager.getSubscription();
         return sub ? 'subscribed' : 'unsubscribed';
@@ -107,7 +108,7 @@
     unsubscribe: async function (apiBaseUrl) {
       if (!this.isSupported()) return 'unsupported';
       try {
-        const reg = await navigator.serviceWorker.getRegistration(SW_PATH);
+        const reg = await navigator.serviceWorker.getRegistration(SW_SCOPE);
         if (!reg) return 'unsubscribed';
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
@@ -126,20 +127,34 @@
     },
 
     showLocalTestNotification: async function () {
-      if (!this.isSupported()) return false;
+      if (!('Notification' in window)) return false;
       const permission = Notification.permission === 'granted'
         ? 'granted'
         : await Notification.requestPermission();
       if (permission !== 'granted') return false;
 
-      const reg = await getRegistration();
-      if (!reg) return false;
-      await reg.showNotification('Rx Savings Watch — Alerts Active!', {
+      const title = 'Rx Savings Watch — Alerts Active!';
+      const opts = {
         body: 'You will be notified privately on this device whenever a generic launches for your watched medications.',
         icon: '/icons/Icon-192.png',
         badge: '/icons/Icon-192.png',
-      });
-      return true;
+      };
+
+      // Try direct Notification API first on desktop browsers (instant popup without SW activation delay),
+      // falling back to Service Worker showNotification (required on Android Chrome).
+      try {
+        new Notification(title, opts);
+        return true;
+      } catch (_) {
+        try {
+          const reg = await getRegistration();
+          if (!reg) return false;
+          await reg.showNotification(title, opts);
+          return true;
+        } catch (__) {
+          return false;
+        }
+      }
     },
 
     printHandout: function (title, bodyHtml) {

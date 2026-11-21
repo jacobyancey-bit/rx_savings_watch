@@ -46,7 +46,10 @@
 
     tesseractLoadPromise = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      // Pinned immutable version + no-referrer to avoid floating CDN tag drift & referrer leakage
+      script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+      script.crossOrigin = 'anonymous';
+      script.referrerPolicy = 'no-referrer';
       script.async = true;
       script.onload = () => {
         if (window.Tesseract) resolve(window.Tesseract);
@@ -532,9 +535,18 @@
         }
       };
 
+      const onPageLeave = () => finish({ type: 'canceled' });
+      const onVisibilityChange = () => {
+        if (document.hidden) finish({ type: 'canceled' });
+      };
+      window.addEventListener('pagehide', onPageLeave);
+      document.addEventListener('visibilitychange', onVisibilityChange);
+
       const cleanup = () => {
         if (closed) return;
         closed = true;
+        window.removeEventListener('pagehide', onPageLeave);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
         if (autoLoopTimer) {
           clearTimeout(autoLoopTimer);
           autoLoopTimer = null;

@@ -7,10 +7,12 @@
   const SW_SCOPE = '/rx-push/';
 
   // Capture #import=... BEFORE Flutter Web's HashUrlStrategy boots and rewrites the URL hash!
+  // Strictly bounded (<= 1024 chars) and numeric-CSV validated to prevent oversized/malformed hash abuse.
   let pendingImportHash = '';
   try {
-    if (window.location && window.location.hash && window.location.hash.toLowerCase().includes('import=')) {
-      pendingImportHash = window.location.hash;
+    const rawHash = window.location && typeof window.location.hash === 'string' ? window.location.hash : '';
+    if (rawHash.length > 0 && rawHash.length <= 1024 && /^#import=[0-9,\s]+$/i.test(rawHash)) {
+      pendingImportHash = rawHash;
       window.history.replaceState(
         null,
         '',

@@ -755,13 +755,12 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
     return existing;
   }
 
-  if (existing && options.forceRefresh) {
+  // Run full 6-source cross-referenced live ingestion (only clear stale rows after live API confirms match)
+  if (existing && options.forceRefresh && results.length > 0) {
     db.prepare('DELETE FROM generic_status WHERE drug_id = ?').run(existing.id);
     db.prepare('DELETE FROM market_availability WHERE drug_id = ?').run(existing.id);
     db.prepare('DELETE FROM alert_events WHERE drug_id = ?').run(existing.id);
   }
-
-  // Run full 6-source cross-referenced live ingestion
   const ingestRes = await ingestLiveDrug(db, {
     brand_name: canonicalBrand,
     generic_name: canonicalGeneric,

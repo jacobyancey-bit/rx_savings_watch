@@ -10,7 +10,7 @@ class PartnerLinks {
   static const String goodRxPartnerParam = ''; // e.g., 'utm_source=danglingdice'
 
   // Optional non-nagging tip jar URL (e.g., Stripe Payment Link, Ko-fi, or Buy Me a Coffee)
-  static const String tipJarUrl = 'https://dangling-dice-studios.com/';
+  static const String tipJarUrl = 'https://buymeacoffee.com/danglingdicestudios';
 
   // Official legal URLs
   static const String privacyPolicyUrl = 'https://dangling-dice-studios.com/rx-savings-watch/privacy.html';

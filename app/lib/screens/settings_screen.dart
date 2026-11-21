@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import '../widgets/privacy_promise_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -254,6 +256,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ],
+          const SizedBox(height: 28),
+
+          // Legal & Policies (Website URLs)
+          Text(
+            'Legal & Official Policies',
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(Icons.verified_user_outlined, color: Colors.teal.shade700),
+                  title: const Text('Read Our Privacy Promise'),
+                  subtitle: const Text('Plain-English summary right in this app'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => PrivacyPromiseSheet.show(context),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.privacy_tip_outlined),
+                  title: const Text('Privacy Policy'),
+                  subtitle: const Text('https://dangling-dice-studios.com/rx-savings-watch/privacy.html'),
+                  trailing: const Icon(Icons.copy, size: 18),
+                  onTap: () {
+                    const url = 'https://dangling-dice-studios.com/rx-savings-watch/privacy.html';
+                    Clipboard.setData(const ClipboardData(text: url));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Privacy Policy URL copied to clipboard')),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.description_outlined),
+                  title: const Text('Terms of Service & Medical Disclaimer'),
+                  subtitle: const Text('https://dangling-dice-studios.com/rx-savings-watch/terms.html'),
+                  trailing: const Icon(Icons.copy, size: 18),
+                  onTap: () {
+                    const url = 'https://dangling-dice-studios.com/rx-savings-watch/terms.html';
+                    Clipboard.setData(const ClipboardData(text: url));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Terms of Service URL copied to clipboard')),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+
           const SizedBox(height: 28),
 
           // One-Tap Data Control

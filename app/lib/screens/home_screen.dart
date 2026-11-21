@@ -56,25 +56,29 @@ class HomeScreen extends StatelessWidget {
                     child: _buildHeroBanner(context, cabinet),
                   ),
 
-                  // Sync error alert if present
+                  // Graceful Offline Mode Banner
                   if (cabinet.syncError != null)
                     SliverToBoxAdapter(
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.red.shade50,
+                          color: Colors.amber.shade50,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.red.shade200),
+                          border: Border.all(color: Colors.amber.shade300),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.sync_problem, color: Colors.red.shade700, size: 20),
-                            const SizedBox(width: 8),
+                            Icon(Icons.cloud_off_outlined, color: Colors.amber.shade800, size: 20),
+                            const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                'Sync warning: Verify backend server is running.\n${cabinet.syncError}',
-                                style: TextStyle(fontSize: 11, color: Colors.red.shade900),
+                                'Offline Mode — Displaying cached verification data. Pull to refresh when connection is restored.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.amber.shade900,
+                                ),
                               ),
                             ),
                           ],

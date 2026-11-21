@@ -61,6 +61,7 @@ class MockApiService extends ApiService {
   Future<Map<String, dynamic>> checkUpdates({
     required List<String> rxcuis,
     String? lastChecked,
+    bool enableChaffing = true,
   }) async {
     return {
       'success': true,

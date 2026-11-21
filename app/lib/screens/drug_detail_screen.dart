@@ -1,21 +1,49 @@
 import 'package:flutter/material.dart';
 import '../models/drug.dart';
+import '../widgets/doctor_handout_sheet.dart';
 import '../widgets/signal_badges.dart';
 
-class DrugDetailScreen extends StatelessWidget {
+class DrugDetailScreen extends StatefulWidget {
   final Drug drug;
 
   const DrugDetailScreen({super.key, required this.drug});
 
   @override
+  State<DrugDetailScreen> createState() => _DrugDetailScreenState();
+}
+
+class _DrugDetailScreenState extends State<DrugDetailScreen> {
+  final TextEditingController _copayController = TextEditingController(text: '60');
+  double _monthlyBrandCopay = 60.0;
+  final double _monthlyGenericCopay = 10.0;
+
+  @override
+  void dispose() {
+    _copayController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final drug = widget.drug;
     final p = drug.pricing;
+
+    final annualSavings = (_monthlyBrandCopay > _monthlyGenericCopay)
+        ? (_monthlyBrandCopay - _monthlyGenericCopay) * 12
+        : 0.0;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(drug.displayName),
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share_outlined),
+            tooltip: 'Clinical Handout',
+            onPressed: () => DoctorHandoutSheet.show(context, drug),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -75,6 +103,12 @@ class DrugDetailScreen extends StatelessWidget {
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: Colors.grey.shade700,
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => DoctorHandoutSheet.show(context, drug),
+                    icon: const Icon(Icons.badge_outlined, size: 16),
+                    label: const Text('Show Doctor / Pharmacist Card'),
                   ),
                 ],
               ),
@@ -171,6 +205,83 @@ class DrugDetailScreen extends StatelessWidget {
                 ],
               ),
             ),
+
+            // Annual Out-of-Pocket Copay Calculator
+            if (drug.commercialGenericAvailable) ...[
+              const SizedBox(height: 24),
+              Text(
+                'Personalized Annual Copay Calculator',
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Your current monthly brand copay (\$):',
+                            style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 80,
+                          child: TextField(
+                            controller: _copayController,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onChanged: (val) {
+                              setState(() {
+                                _monthlyBrandCopay = double.tryParse(val) ?? 0.0;
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Standard Tier 1 Generic Copay:'),
+                        Text('\$${_monthlyGenericCopay.toStringAsFixed(0)} / mo', style: const TextStyle(fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    const Divider(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Projected Annual Savings:',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        Text(
+                          '\$${annualSavings.toStringAsFixed(0)} / year',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green.shade800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             // Supply Shortages if active
             if (drug.hasActiveShortage) ...[

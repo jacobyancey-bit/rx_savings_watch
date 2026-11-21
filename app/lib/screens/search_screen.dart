@@ -175,6 +175,42 @@ class _SearchScreenState extends State<SearchScreen> {
 
       final strengthLabel = result.detectedStrength != null ? ' (${result.detectedStrength})' : '';
 
+      // If the scanned generic abbreviation maps to multiple distinct FDA brand formulations
+      // (e.g., AMPHET/DEXTR 25 mg -> Mydayis vs Adderall XR), let the user pick in 1 tap.
+      if (result.ambiguousCandidates.length > 1) {
+        setState(() => _isScanningBottle = false);
+        final chosen = await _showFormulationChoiceSheet(
+          result.ambiguousCandidates,
+          result.detectedStrength,
+        );
+        if (chosen == null || !mounted) return;
+
+        final catalogMatch = _allCatalogDrugs.where(
+          (d) => (d.brandName ?? '').toLowerCase() == chosen.toLowerCase(),
+        );
+        if (catalogMatch.isNotEmpty) {
+          final drug = catalogMatch.first;
+          _controller.text = drug.displayName;
+          setState(() => _filteredDrugs = [drug]);
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => DrugDetailScreen(
+                drug: drug,
+                initialStrength: result.detectedStrength,
+              ),
+            ),
+          );
+        } else {
+          _controller.text = chosen;
+          await _searchLiveFederalDatabases(
+            chosen,
+            autoOpenFirst: true,
+            autoOpenStrength: result.detectedStrength,
+          );
+        }
+        return;
+      }
+
       if (result.matchedCatalogDrug != null) {
         final drug = result.matchedCatalogDrug!;
         _controller.text = drug.displayName;
@@ -221,6 +257,76 @@ class _SearchScreenState extends State<SearchScreen> {
         _liveSearchNote = 'Could not open camera. Please check camera permission or type the medication name.';
       });
     }
+  }
+
+  Future<String?> _showFormulationChoiceSheet(
+    List<String> candidates,
+    String? detectedStrength,
+  ) {
+    final strengthNote = detectedStrength != null ? ' ($detectedStrength)' : '';
+    return showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                'Which formulation is on your bottle?',
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Your label shares the same active ingredient$strengthNote across more than one brand formulation. Pick yours to see exact generic & savings details:',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ...candidates.map((name) {
+                final subtitle = switch (name.toLowerCase()) {
+                  'mydayis' => 'Triple-bead 16-hr ER • Strengths: 12.5, 25, 37.5, 50 mg',
+                  'adderall xr' => 'Double-bead 12-hr ER • Strengths: 5, 10, 15, 20, 25, 30 mg',
+                  _ => 'Tap to view exact generic status & savings',
+                };
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: ListTile(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      side: BorderSide(color: theme.colorScheme.outlineVariant),
+                    ),
+                    leading: Icon(Icons.medication_outlined, color: theme.colorScheme.primary),
+                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text(subtitle, style: const TextStyle(fontSize: 12.5)),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(ctx).pop(name),
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override

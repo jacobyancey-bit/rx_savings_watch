@@ -93,6 +93,36 @@ void main() {
       expect(result.hasResult, isTrue);
       expect(result.queryTerm, 'Adderall XR');
       expect(result.detectedStrength, '20 mg');
+      expect(result.ambiguousCandidates, isEmpty);
+    });
+
+    test('Prioritizes GENERIC FOR MYDAYIS 37.5 MG over generic abbreviation', () {
+      const mydayisLabel = '''
+        AMPHET/DEXTR
+        GENERIC FOR MYDAYIS 37.5 MG
+      ''';
+
+      final result = BottleLabelParser.parse(mydayisLabel, catalog);
+      expect(result.hasResult, isTrue);
+      expect(result.queryTerm?.toUpperCase(), 'MYDAYIS');
+      expect(result.detectedStrength, '37.5 mg');
+    });
+
+    test('Disambiguates AMPHET/DEXTR 37.5 MG automatically to Mydayis by unique strength', () {
+      const label = 'AMPHET/DEXTR 37.5 MG CAP';
+      final result = BottleLabelParser.parse(label, catalog);
+      expect(result.hasResult, isTrue);
+      expect(result.queryTerm, 'Mydayis');
+      expect(result.detectedStrength, '37.5 mg');
+      expect(result.ambiguousCandidates, isEmpty);
+    });
+
+    test('Offers Mydayis vs Adderall XR choice for shared 25 mg strength', () {
+      const label = 'AMPHET/DEXTR 25 MG CAP';
+      final result = BottleLabelParser.parse(label, catalog);
+      expect(result.hasResult, isTrue);
+      expect(result.detectedStrength, '25 mg');
+      expect(result.ambiguousCandidates, containsAll(['Mydayis', 'Adderall XR']));
     });
   });
 }

@@ -5,15 +5,20 @@ class BottleScanParseResult {
   final String? queryTerm;
   final String? detectedNdc;
   final String? detectedStrength;
+  final List<String> ambiguousCandidates;
 
   const BottleScanParseResult({
     this.matchedCatalogDrug,
     this.queryTerm,
     this.detectedNdc,
     this.detectedStrength,
+    this.ambiguousCandidates = const [],
   });
 
-  bool get hasResult => matchedCatalogDrug != null || (queryTerm != null && queryTerm!.isNotEmpty);
+  bool get hasResult =>
+      matchedCatalogDrug != null ||
+      (queryTerm != null && queryTerm!.isNotEmpty) ||
+      ambiguousCandidates.isNotEmpty;
 }
 
 /// Pure on-device pharmacy bottle label parser.
@@ -77,15 +82,76 @@ class BottleLabelParser {
     'WARFAR': 'warfarin',
   };
 
-  static String? _matchPharmacyAbbreviation(String normalizedUpper) {
-    // Check extended-release amphetamine/dextroamphetamine specifically
-    if ((normalizedUpper.contains('AMPHET/DEXTR') ||
-            normalizedUpper.contains('AMPHET-DEXTR') ||
-            normalizedUpper.contains('AMPHET DEXTR') ||
-            normalizedUpper.contains('AMPHETAMINE SALTS')) &&
-        RegExp(r'\b(XR|ER|EXT|EXTENDED)\b').hasMatch(normalizedUpper)) {
-      return 'Adderall XR';
+  static final RegExp _genericForPattern = RegExp(
+    r'(?:GENERIC\s+FOR|GEN\s+FOR|SUBSTITUTED\s+FOR|COMMON\s+BRAND(?:\(S\))?:?)\s+([A-Za-z][A-Za-z0-9\-]{2,24}(?:\s+(?:XR|ER|PM|LA|SR|DR|CR|CD|HFA))?)',
+    caseSensitive: false,
+  );
+
+  static bool _isAmphetSaltLabel(String normalizedUpper) {
+    return normalizedUpper.contains('AMPHET/DEXTR') ||
+        normalizedUpper.contains('AMPHET-DEXTR') ||
+        normalizedUpper.contains('AMPHET DEXTR') ||
+        normalizedUpper.contains('D-AMPHET') ||
+        normalizedUpper.contains('AMPHETAMINE SALTS') ||
+        normalizedUpper.contains('AMPHET') ||
+        normalizedUpper.contains('DEXTR');
+  }
+
+  static BottleScanParseResult? _resolveAmphetSaltDisambiguation(
+    String normalizedUpper,
+    String? detectedStrength,
+    List<Drug> knownCatalog,
+  ) {
+    if (!_isAmphetSaltLabel(normalizedUpper)) return null;
+
+    Drug? findInCatalog(String brandName) {
+      final upper = brandName.toUpperCase();
+      for (final d in knownCatalog) {
+        if ((d.brandName ?? '').trim().toUpperCase() == upper) return d;
+      }
+      return null;
     }
+
+    // 1. Unique Mydayis strengths (Adderall XR does NOT exist in 12.5, 37.5, or 50 mg)
+    final strengthNum = detectedStrength != null
+        ? RegExp(r'\d+(?:\.\d+)?').firstMatch(detectedStrength)?.group(0)
+        : null;
+
+    if (strengthNum == '12.5' || strengthNum == '37.5' || strengthNum == '50') {
+      final catalogHit = findInCatalog('Mydayis');
+      return BottleScanParseResult(
+        matchedCatalogDrug: catalogHit,
+        queryTerm: catalogHit?.displayName ?? 'Mydayis',
+        detectedStrength: detectedStrength,
+      );
+    }
+
+    // 2. Unique Adderall XR strengths (Mydayis does NOT exist in 5, 10, 15, 20, or 30 mg)
+    if (strengthNum == '5' ||
+        strengthNum == '10' ||
+        strengthNum == '15' ||
+        strengthNum == '20' ||
+        strengthNum == '30') {
+      final targetBrand = RegExp(r'\b(XR|ER|EXT|EXTENDED|CAP|CAPS)\b').hasMatch(normalizedUpper)
+          ? 'Adderall XR'
+          : 'Adderall XR';
+      final catalogHit = findInCatalog(targetBrand);
+      return BottleScanParseResult(
+        matchedCatalogDrug: catalogHit,
+        queryTerm: catalogHit?.displayName ?? targetBrand,
+        detectedStrength: detectedStrength,
+      );
+    }
+
+    // 3. Shared strength (25 mg) or no strength scanned yet -> let user pick in 1 tap!
+    return BottleScanParseResult(
+      queryTerm: 'Mydayis',
+      detectedStrength: detectedStrength,
+      ambiguousCandidates: const ['Mydayis', 'Adderall XR'],
+    );
+  }
+
+  static String? _matchPharmacyAbbreviation(String normalizedUpper) {
     for (final entry in _pharmacyAbbreviations.entries) {
       if (normalizedUpper.contains(entry.key)) {
         // If this is a single-word truncation prefix and the full drug name is already
@@ -150,7 +216,53 @@ class BottleLabelParser {
     final normalizedUpper = rawOcrText.toUpperCase();
     final detectedStrength = extractStrength(rawOcrText);
 
-    // 0. Expand shortened U.S. pharmacy bottle abbreviations (e.g., AMPHET/DEXTR -> Adderall)
+    // 0A. Highest priority: explicit "GENERIC FOR <BRAND>" / "COMMON BRAND: <BRAND>" line
+    final genericForMatch = _genericForPattern.firstMatch(rawOcrText);
+    if (genericForMatch != null) {
+      final brandText = genericForMatch.group(1)!.trim();
+      final brandUpper = brandText.toUpperCase();
+      for (final drug in knownCatalog) {
+        final b = drug.brandName?.trim().toUpperCase() ?? '';
+        if (b.isNotEmpty && (b == brandUpper || b.startsWith(brandUpper) || brandUpper.startsWith(b))) {
+          return BottleScanParseResult(
+            matchedCatalogDrug: drug,
+            queryTerm: drug.displayName,
+            detectedStrength: detectedStrength,
+          );
+        }
+      }
+      return BottleScanParseResult(
+        queryTerm: brandText,
+        detectedStrength: detectedStrength,
+      );
+    }
+
+    // 0B. Explicit catalog brand match BEFORE generic abbreviations (e.g., "MYDAYIS" anywhere on label)
+    for (final drug in knownCatalog) {
+      final brand = drug.brandName?.trim().toUpperCase();
+      if (brand != null && brand.length >= 4) {
+        final brandWord = brand.split(' ').first;
+        if (brandWord.length >= 4 && RegExp('\\b${RegExp.escape(brandWord)}\\b').hasMatch(normalizedUpper)) {
+          return BottleScanParseResult(
+            matchedCatalogDrug: drug,
+            queryTerm: drug.displayName,
+            detectedStrength: detectedStrength,
+          );
+        }
+      }
+    }
+
+    // 0C. Smart clinical disambiguation for mixed amphetamine salts (Mydayis vs Adderall XR)
+    final amphetDisambig = _resolveAmphetSaltDisambiguation(
+      normalizedUpper,
+      detectedStrength,
+      knownCatalog,
+    );
+    if (amphetDisambig != null) {
+      return amphetDisambig;
+    }
+
+    // 0D. Expand other shortened U.S. pharmacy bottle abbreviations (e.g., AMOX/CLAV, ATORVAST)
     final expandedAbbrev = _matchPharmacyAbbreviation(normalizedUpper);
     if (expandedAbbrev != null) {
       final expandedUpper = expandedAbbrev.toUpperCase();
@@ -171,7 +283,7 @@ class BottleLabelParser {
       );
     }
 
-    // 1. Highest-precision match: check against known canonical catalog drugs first
+    // 1. Check against known canonical catalog generic names
     for (final drug in knownCatalog) {
       final brand = drug.brandName?.trim().toUpperCase();
       if (brand != null && brand.length >= 4) {

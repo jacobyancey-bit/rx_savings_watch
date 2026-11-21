@@ -27,15 +27,17 @@
     'DELAYED', 'PRESCRIPTION', 'WARNING', 'DROWSINESS', 'ALCOHOL',
   ]);
 
+  // Put specific brand names FIRST so "GENERIC FOR MYDAYIS" locks onto MYDAYIS
+  // instead of stopping at the generic abbreviation AMPHET/DEXTR.
   const KNOWN_RX_PREFIXES = [
+    'MYDAYIS', 'ADDERALL', 'JORNAY', 'VYVANSE', 'ELIQUIS', 'JARDIANCE',
+    'OZEMPIC', 'SYNTHROID', 'SYMBICORT', 'TRUVADA', 'XARELTO', 'MOUNJARO',
     'AMPHET/DEXTR', 'AMPHET-DEXTR', 'AMPHET', 'DEXTR', 'METHYLPHEN', 'LISDEX',
     'ATORVAST', 'LEVOTHYROX', 'METOPROL', 'LISINOP', 'LOSARTAN', 'AMLODIP',
     'METFORM', 'ROSUVAST', 'ESCITALOP', 'SERTRAL', 'GABAPENT', 'OMEPRAZ',
     'PANTOPRAZ', 'MONTELUK', 'ALBUTER', 'AMOX/CLAV', 'AMOX', 'HYDROCHLOR',
     'HCTZ', 'FLUTIC', 'BUDES', 'EMTRIC', 'TENOF', 'APIXAB', 'RIVAROX',
-    'EMPAGLIF', 'SEMAGLUT', 'TIRZEPAT', 'WARFAR', 'ELIQUIS', 'VYVANSE',
-    'JORNAY', 'MYDAYIS', 'ADDERALL', 'OZEMPIC', 'JARDIANCE', 'SYNTHROID',
-    'SYMBICORT', 'TRUVADA',
+    'EMPAGLIF', 'SEMAGLUT', 'TIRZEPAT', 'WARFAR',
   ];
 
   function loadTesseract() {
@@ -449,7 +451,7 @@
 
       const guideBox = document.createElement('div');
       guideBox.style.cssText =
-        'width:min(88vw,440px);height:118px;border:3px solid #2dd4bf;border-radius:14px;' +
+        'width:min(88vw,440px);height:132px;border:3px solid #2dd4bf;border-radius:14px;' +
         'box-shadow:0 0 0 9999px rgba(0,0,0,0.62);position:relative;background:transparent;transition:border-color 0.2s ease;';
 
       const statusBadge = document.createElement('div');

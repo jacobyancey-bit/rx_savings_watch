@@ -22,7 +22,6 @@ module.exports = {
     'https://rx.dangling-dice-studios.com',
     'https://dangling-dice-studios.com',
     'https://www.dangling-dice-studios.com',
-    'https://rx-savings-server-production.up.railway.app',
     'http://localhost:3000',
     'http://127.0.0.1:3000',
   ],

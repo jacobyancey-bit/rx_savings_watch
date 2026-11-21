@@ -5,6 +5,7 @@ import '../providers/cabinet_provider.dart';
 import '../services/cabinet_transfer_service.dart';
 import '../services/web_push_service.dart';
 import '../widgets/drug_card.dart';
+import '../widgets/home_footer_section.dart';
 import '../widgets/privacy_promise_sheet.dart';
 import '../widgets/transfer_cabinet_sheet.dart';
 import 'drug_detail_screen.dart';
@@ -233,8 +234,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // Empty State or List
                   if (cabinet.cabinet.isEmpty)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
+                    SliverToBoxAdapter(
                       child: _buildEmptyState(context),
                     )
                   else
@@ -265,6 +265,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         childCount: cabinet.cabinet.length,
                       ),
                     ),
+
+                  // FAQs, Contact Info & Important Disclaimers
+                  const SliverToBoxAdapter(
+                    child: HomeFooterSection(),
+                  ),
                 ],
               ),
             ),

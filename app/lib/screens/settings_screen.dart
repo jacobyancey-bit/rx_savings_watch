@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../config/partner_links.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
@@ -279,13 +280,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   leading: const Icon(Icons.privacy_tip_outlined),
                   title: const Text('Privacy Policy'),
-                  subtitle: const Text('https://dangling-dice-studios.com/rx-savings-watch/privacy.html'),
-                  trailing: const Icon(Icons.copy, size: 18),
-                  onTap: () {
-                    const url = 'https://dangling-dice-studios.com/rx-savings-watch/privacy.html';
-                    Clipboard.setData(const ClipboardData(text: url));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Privacy Policy URL copied to clipboard')),
+                  subtitle: const Text(PartnerLinks.privacyPolicyUrl),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () async {
+                    await launchUrl(
+                      Uri.parse(PartnerLinks.privacyPolicyUrl),
+                      mode: LaunchMode.externalApplication,
                     );
                   },
                 ),
@@ -293,15 +293,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   leading: const Icon(Icons.description_outlined),
                   title: const Text('Terms of Service & Medical Disclaimer'),
-                  subtitle: const Text('https://dangling-dice-studios.com/rx-savings-watch/terms.html'),
-                  trailing: const Icon(Icons.copy, size: 18),
-                  onTap: () {
-                    const url = 'https://dangling-dice-studios.com/rx-savings-watch/terms.html';
-                    Clipboard.setData(const ClipboardData(text: url));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Terms of Service URL copied to clipboard')),
+                  subtitle: const Text(PartnerLinks.termsOfServiceUrl),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () async {
+                    await launchUrl(
+                      Uri.parse(PartnerLinks.termsOfServiceUrl),
+                      mode: LaunchMode.externalApplication,
                     );
                   },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 28),
+
+          // Quiet, Optional Tip Jar (Strictly in Settings — Never Nagging)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.favorite_outline, color: Colors.teal.shade700, size: 22),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Support Ad-Free Software (Optional)',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Rx Savings Watch is 100% free, private, and ad-free. If it helped lower your prescription costs and you would like to leave an optional tip for our independent studio, thank you!',
+                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 48,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () async {
+                      await launchUrl(
+                        Uri.parse(PartnerLinks.tipJarUrl),
+                        mode: LaunchMode.externalApplication,
+                      );
+                    },
+                    icon: const Icon(Icons.volunteer_activism_outlined),
+                    label: const Text(
+                      'Leave an Optional Tip',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 ),
               ],
             ),

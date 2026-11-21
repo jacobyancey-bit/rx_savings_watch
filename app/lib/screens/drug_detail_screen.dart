@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../config/partner_links.dart';
 import '../models/drug.dart';
 import '../widgets/doctor_handout_sheet.dart';
 import '../widgets/signal_badges.dart';
@@ -453,8 +455,103 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                   ),
                 ),
             ],
+            // Compare Cash & Discount Pharmacy Prices (Optional Outbound Referral Links)
+            const SizedBox(height: 24),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.local_offer_outlined, color: Colors.teal.shade700, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Compare Cash & Discount Prices',
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Check transparent cash prices or free pharmacy discount coupons for ${drug.displayName}:',
+                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.35),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _buildPartnerButton(
+                        context,
+                        label: 'Cost Plus Drugs',
+                        icon: Icons.medication_outlined,
+                        uri: PartnerLinks.buildCostPlusDrugsUrl(drug.genericName),
+                      ),
+                      _buildPartnerButton(
+                        context,
+                        label: 'Amazon Pharmacy',
+                        icon: Icons.local_shipping_outlined,
+                        uri: PartnerLinks.buildAmazonPharmacyUrl(drug.displayName),
+                      ),
+                      _buildPartnerButton(
+                        context,
+                        label: 'SingleCare Coupon',
+                        icon: Icons.confirmation_number_outlined,
+                        uri: PartnerLinks.buildSingleCareUrl(drug.displayName),
+                      ),
+                      _buildPartnerButton(
+                        context,
+                        label: 'GoodRx Coupon',
+                        icon: Icons.savings_outlined,
+                        uri: PartnerLinks.buildGoodRxUrl(drug.displayName),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Transparency notice: Some links may earn Dangling Dice Studios a small referral fee at zero cost to you. No personal data is shared when you open a link.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPartnerButton(
+    BuildContext context, {
+    required String label,
+    required IconData icon,
+    required Uri uri,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: () async {
+        final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (!ok && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not open $label link.')),
+          );
+        }
+      },
+      icon: Icon(icon, size: 18),
+      label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 48),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       ),
     );
   }

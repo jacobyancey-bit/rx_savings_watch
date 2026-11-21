@@ -148,65 +148,77 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
 
             const SizedBox(height: 18),
 
-            // Plain-English Substitution & Official Sources Trust Card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: drug.commercialGenericAvailable
-                    ? (drug.isAutoSubstitutable ? Colors.teal.shade50 : Colors.indigo.shade50)
-                    : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: drug.commercialGenericAvailable
-                      ? (drug.isAutoSubstitutable ? Colors.teal.shade300 : Colors.indigo.shade300)
-                      : Colors.grey.shade300,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            // Plain-English Substitution & Official Sources Trust Card (low-glare, theme-aware)
+            Builder(
+              builder: (context) {
+                final isDark = theme.brightness == Brightness.dark;
+                final accent = drug.commercialGenericAvailable
+                    ? (drug.isAutoSubstitutable ? Colors.teal : Colors.indigo)
+                    : Colors.blueGrey;
+                final cardBg = isDark
+                    ? accent.withValues(alpha: 0.14)
+                    : accent.withValues(alpha: 0.07);
+                final cardBorder = isDark
+                    ? accent.withValues(alpha: 0.35)
+                    : accent.withValues(alpha: 0.28);
+                final iconColor = isDark ? accent.shade200 : accent.shade700;
+
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: cardBg,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: cardBorder),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        drug.isAutoSubstitutable
-                            ? Icons.local_pharmacy
-                            : Icons.medical_information_outlined,
-                        color: drug.commercialGenericAvailable
-                            ? (drug.isAutoSubstitutable ? Colors.teal.shade800 : Colors.indigo.shade800)
-                            : Colors.grey.shade700,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Pharmacy Substitution Guidance',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
+                      Row(
+                        children: [
+                          Icon(
+                            drug.isAutoSubstitutable
+                                ? Icons.local_pharmacy
+                                : Icons.medical_information_outlined,
+                            color: iconColor,
+                            size: 22,
                           ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Pharmacy Substitution Guidance',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        drug.substitutionPlainGuidance,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          height: 1.4,
+                          color: theme.colorScheme.onSurface,
                         ),
                       ),
+                      if (drug.verificationSources.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'Verified using: ${drug.verificationSources.join(' • ')}',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    drug.substitutionPlainGuidance,
-                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
-                  ),
-                  if (drug.verificationSources.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      'Verified using: ${drug.verificationSources.join(' • ')}',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+                );
+              },
             ),
 
             const SizedBox(height: 24),
@@ -239,9 +251,9 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
+                color: theme.colorScheme.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.grey.shade200),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
               ),
               child: Column(
                 children: [
@@ -268,7 +280,9 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                             : (drug.commercialGenericAvailable ? 'Available' : 'Pending market launch'),
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: p?.genericNadacUnitPrice != null ? Colors.green.shade700 : Colors.black87,
+                          color: p?.genericNadacUnitPrice != null
+                              ? (theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade800)
+                              : theme.colorScheme.onSurface,
                         ),
                       ),
                     ],
@@ -282,7 +296,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.green.shade600,
+                            color: Colors.teal.shade700,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
@@ -312,9 +326,15 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade50.withValues(alpha: 0.4),
+                  color: theme.brightness == Brightness.dark
+                      ? Colors.teal.withValues(alpha: 0.12)
+                      : Colors.teal.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.green.shade200),
+                  border: Border.all(
+                    color: theme.brightness == Brightness.dark
+                        ? Colors.teal.withValues(alpha: 0.35)
+                        : Colors.teal.withValues(alpha: 0.25),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -324,7 +344,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                         Expanded(
                           child: Text(
                             'Your current monthly brand copay (\$):',
-                            style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+                            style: TextStyle(fontSize: 13.5, color: theme.colorScheme.onSurface),
                           ),
                         ),
                         SizedBox(
@@ -368,7 +388,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Colors.green.shade800,
+                            color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade800,
                           ),
                         ),
                       ],
@@ -385,29 +405,39 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                 'FDA Drug Shortage Report',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: Colors.orange.shade900,
+                  color: theme.brightness == Brightness.dark ? Colors.amber.shade200 : Colors.orange.shade900,
                 ),
               ),
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
+                  color: theme.brightness == Brightness.dark
+                      ? Colors.amber.withValues(alpha: 0.14)
+                      : Colors.orange.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.orange.shade300),
+                  border: Border.all(
+                    color: theme.brightness == Brightness.dark
+                        ? Colors.amber.withValues(alpha: 0.4)
+                        : Colors.orange.withValues(alpha: 0.35),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.warning, color: Colors.orange.shade800, size: 20),
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          color: theme.brightness == Brightness.dark ? Colors.amber.shade300 : Colors.orange.shade800,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           'Status: Current Shortage',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: Colors.orange.shade900,
+                            color: theme.colorScheme.onSurface,
                           ),
                         ),
                       ],
@@ -417,12 +447,12 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                       if (s['reason'] != null)
                         Text(
                           'Reason: ${s['reason']}',
-                          style: TextStyle(fontSize: 13, color: Colors.orange.shade900),
+                          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
                         ),
                       if (s['start_date'] != null)
                         Text(
                           'Reported: ${s['start_date']}',
-                          style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
                         ),
                     ],
                   ],

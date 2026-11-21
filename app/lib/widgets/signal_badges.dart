@@ -124,35 +124,45 @@ class SignalBadges extends StatelessWidget {
     required Color activeColor,
     required IconData icon,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: isVerified ? activeColor.withValues(alpha: 0.1) : Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isVerified ? activeColor : Colors.grey.shade300,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isVerified ? Icons.check_circle : Icons.radio_button_unchecked,
-            size: 16,
-            color: isVerified ? activeColor : Colors.grey.shade500,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: isVerified ? FontWeight.bold : FontWeight.normal,
-              color: isVerified ? activeColor.withValues(alpha: 0.9) : Colors.grey.shade700,
+    return Builder(
+      builder: (context) {
+        final theme = Theme.of(context);
+        final isDark = theme.brightness == Brightness.dark;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isVerified
+                ? activeColor.withValues(alpha: isDark ? 0.18 : 0.09)
+                : theme.colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isVerified
+                  ? activeColor.withValues(alpha: isDark ? 0.6 : 0.7)
+                  : theme.colorScheme.outlineVariant,
+              width: 1,
             ),
           ),
-        ],
-      ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isVerified ? Icons.check_circle : Icons.radio_button_unchecked,
+                size: 16,
+                color: isVerified ? activeColor : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: isVerified ? FontWeight.bold : FontWeight.normal,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

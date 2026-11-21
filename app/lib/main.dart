@@ -59,17 +59,21 @@ class RxSavingsWatchApp extends StatelessWidget {
             },
             theme: ThemeData(
               useMaterial3: true,
+              scaffoldBackgroundColor: const Color(0xFFF3F6F5),
               colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.teal,
+                seedColor: const Color(0xFF0F6B66),
                 brightness: Brightness.light,
+                surface: const Color(0xFFF8FAFA),
               ),
               appBarTheme: const AppBarTheme(
                 centerTitle: false,
                 elevation: 0,
                 scrolledUnderElevation: 1,
+                backgroundColor: Color(0xFFF3F6F5),
               ),
               cardTheme: CardThemeData(
                 elevation: 0,
+                color: const Color(0xFFFCFDFD),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -77,9 +81,24 @@ class RxSavingsWatchApp extends StatelessWidget {
             ),
             darkTheme: ThemeData(
               useMaterial3: true,
+              scaffoldBackgroundColor: const Color(0xFF121918),
               colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.teal,
+                seedColor: const Color(0xFF2D8A84),
                 brightness: Brightness.dark,
+                surface: const Color(0xFF192221),
+              ),
+              appBarTheme: const AppBarTheme(
+                centerTitle: false,
+                elevation: 0,
+                scrolledUnderElevation: 1,
+                backgroundColor: Color(0xFF121918),
+              ),
+              cardTheme: CardThemeData(
+                elevation: 0,
+                color: const Color(0xFF1B2524),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
             ),
             home: const HomeScreen(),

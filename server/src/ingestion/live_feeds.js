@@ -454,11 +454,82 @@ function toTitleCase(str) {
     .join(' ');
 }
 
+function parseNumericStrength(str) {
+  const m = String(str).match(/(\d+(?:\.\d+)?)/);
+  return m ? Number.parseFloat(m[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+function formatStrengthNumber(num) {
+  return Number(num.toFixed(3)).toString();
+}
+
+/**
+ * Extract clean, clinician-accurate total strengths from OpenFDA NDC results & RxNav concepts.
+ * Handles mixed-salt medications (e.g. Mydayis / Adderall: 4 equal amphetamine salts summed to
+ * 12.5 mg, 25 mg, 37.5 mg, 50 mg) and sorts numerically ascending.
+ */
+function extractCleanStrengths(ndcResults, rxConcepts = []) {
+  const strengthSet = new Set();
+
+  for (const r of ndcResults) {
+    if (!Array.isArray(r.active_ingredients) || r.active_ingredients.length === 0) continue;
+
+    // Detect mixed-salt amphetamine / multi-salt formulations where each salt is a fraction of total mg
+    const isMixedAmphetamine =
+      r.active_ingredients.length >= 2 &&
+      r.active_ingredients.every(ai => (ai.name || '').toLowerCase().includes('amphetamine'));
+
+    if (isMixedAmphetamine) {
+      let totalMg = 0;
+      let valid = true;
+      for (const ai of r.active_ingredients) {
+        const m = String(ai.strength || '').match(/(\d+(?:\.\d+)?)\s*mg/i);
+        if (!m) {
+          valid = false;
+          break;
+        }
+        totalMg += Number.parseFloat(m[1]);
+      }
+      if (valid && totalMg > 0) {
+        strengthSet.add(`${formatStrengthNumber(totalMg)} mg`);
+        continue;
+      }
+    }
+
+    const combined = r.active_ingredients
+      .map(ai => (ai.strength || '').toLowerCase().replace(/\/1\b/g, '').trim())
+      .filter(Boolean)
+      .join(' / ');
+    if (combined) {
+      strengthSet.add(combined);
+    }
+  }
+
+  // Cross-check NLM RxNav SBD/SCD concepts to catch any strengths missing from NDC sample
+  for (const prop of rxConcepts) {
+    const name = prop.name || '';
+    if (name.toLowerCase().includes('amphetamine') && name.includes('/')) {
+      const matches = [...name.matchAll(/(\d+(?:\.\d+)?)\s*MG/gi)];
+      if (matches.length >= 2) {
+        const sum = matches.reduce((acc, m) => acc + Number.parseFloat(m[1]), 0);
+        if (sum > 0) strengthSet.add(`${formatStrengthNumber(sum)} mg`);
+        continue;
+      }
+    }
+    const m = name.match(/\b(\d+(?:\.\d+)?\s*(?:MG|MCG|ML|G|%)(?:\s*\/\s*\d+(?:\.\d+)?\s*(?:ML|MG|ACTUAT))?)\b/i);
+    if (m) {
+      strengthSet.add(m[1].toLowerCase().replace(/\s+/g, ' ').trim());
+    }
+  }
+
+  return [...strengthSet].sort((a, b) => parseNumericStrength(a) - parseNumericStrength(b));
+}
+
 /**
  * Live On-Demand Discovery & Canonical Cross-Reference:
  * Resolves a user search term strictly to an official FDA/RxNorm canonical drug
  * (user text is NEVER stored as the medication name), deduplicates by canonical name/RXCUI,
- * collects available dosages into one record, runs 6-source ingestion + 2-signal detection,
+ * collects ALL official dosages into one record, runs 6-source ingestion + 2-signal detection,
  * and saves it to SQLite for instant future lookups.
  */
 async function discoverAndIngestDrug(db, rawQuery) {
@@ -466,21 +537,28 @@ async function discoverAndIngestDrug(db, rawQuery) {
   if (clean.length < 3 || clean.length > 80) return null;
 
   const term = encodeURIComponent(`"${clean}"`);
-  // 1. Resolve canonical brand/generic/strengths via OpenFDA NDC (finished products only)
-  let ndcData = await fetchJsonSafe(
-    `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+(brand_name:${term}+OR+generic_name:${term})&limit=15`
-  );
+  // 1. Resolve canonical brand/generic/strengths via OpenFDA NDC (up to 100 finished products) + RxNav
+  let [ndcData, rxData] = await Promise.all([
+    fetchJsonSafe(
+      `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+(brand_name:${term}+OR+generic_name:${term})&limit=100`
+    ),
+    fetchJsonSafe(`https://rxnav.nlm.nih.gov/REST/drugs.json?name=${encodeURIComponent(clean)}`),
+  ]);
 
   // Fallback: unquoted token search if exact phrase missed
   if (!ndcData?.results?.length) {
     const loose = encodeURIComponent(clean.split(' ')[0]);
     ndcData = await fetchJsonSafe(
-      `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+(brand_name:${loose}+OR+generic_name:${loose})&limit=15`
+      `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+(brand_name:${loose}+OR+generic_name:${loose})&limit=100`
     );
   }
 
   const results = ndcData?.results || [];
   if (results.length === 0) return null;
+
+  const rxConcepts = (rxData?.drugGroup?.conceptGroup || [])
+    .filter(g => g.tty === 'SBD' || g.tty === 'SCD')
+    .flatMap(g => g.conceptProperties || []);
 
   // Pick the best canonical match (prefer NDA/BLA reference brand if present)
   const primary =
@@ -494,25 +572,21 @@ async function discoverAndIngestDrug(db, rawQuery) {
   const drugType = (primary.marketing_category || '').includes('BLA') ? 'biologic' : 'small_molecule';
   const dosageForm = primary.dosage_form ? primary.dosage_form.toLowerCase() : null;
 
-  // Deduplicate available strengths cleanly (up to 6 distinct doses on one card)
-  const strengthSet = new Set();
-  for (const r of results) {
-    if (Array.isArray(r.active_ingredients)) {
-      const s = r.active_ingredients
-        .map(ai => ai.strength)
-        .filter(Boolean)
-        .join(' / ');
-      if (s) strengthSet.add(s.toLowerCase().replace(/\/1\b/g, '').trim());
-    }
-  }
-  const combinedStrengths = [...strengthSet].slice(0, 6).join(', ') || null;
+  // Deduplicate ALL official strengths cleanly (sorted ascending, summing mixed salts accurately)
+  const allStrengths = extractCleanStrengths(results, rxConcepts);
+  const combinedStrengths = allStrengths.slice(0, 12).join(', ') || null;
 
-  // Check if this canonical drug already exists (prevents duplicates!)
+  // Check if this canonical drug already exists (update strengths if we found a more complete list!)
   const existing = db.prepare(
     'SELECT * FROM drugs WHERE LOWER(generic_name) = LOWER(?) OR (brand_name IS NOT NULL AND LOWER(brand_name) = LOWER(?))'
   ).get(canonicalGeneric, canonicalBrand || '');
 
   if (existing) {
+    if (combinedStrengths && combinedStrengths.length > (existing.strength || '').length) {
+      db.prepare("UPDATE drugs SET strength = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(combinedStrengths, existing.id);
+      return db.prepare('SELECT * FROM drugs WHERE id = ?').get(existing.id);
+    }
     return existing;
   }
 

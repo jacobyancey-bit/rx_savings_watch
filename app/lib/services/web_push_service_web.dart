@@ -11,6 +11,7 @@ extension type _RxPushBridge(JSObject _) implements JSObject {
   external JSPromise<JSString> subscribe(String apiBaseUrl);
   external JSPromise<JSString> unsubscribe(String apiBaseUrl);
   external JSPromise<JSBoolean> showLocalTestNotification();
+  external bool printHandout(String title, String bodyHtml);
 }
 
 /// Web implementation calling window.rxPush (Service Worker + IndexedDB local filtering).
@@ -70,6 +71,14 @@ class WebPushService {
       if (bridge == null) return false;
       final result = await bridge.showLocalTestNotification().toDart;
       return result.toDart;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static bool printHandout(String title, String bodyHtml) {
+    try {
+      return _rxPush?.printHandout(title, bodyHtml) ?? false;
     } catch (_) {
       return false;
     }

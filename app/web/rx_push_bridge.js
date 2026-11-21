@@ -141,5 +141,35 @@
       });
       return true;
     },
+
+    printHandout: function (title, bodyHtml) {
+      try {
+        const win = window.open('', '_blank', 'width=760,height=900');
+        if (!win) return false;
+        win.document.open();
+        win.document.write(
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' +
+          title +
+          '</title><style>' +
+          'body{font-family:Arial,Helvetica,sans-serif;color:#111;background:#fff;padding:32px;line-height:1.55;font-size:17px;}' +
+          'h1{margin:0 0 6px;font-size:24px;color:#057873;}' +
+          '.sub{color:#444;margin:0 0 20px;font-size:14px;}' +
+          '.box{border:2px solid #057873;border-radius:12px;padding:18px;margin-bottom:18px;}' +
+          '.row{margin:8px 0;} .label{font-weight:bold;color:#333;}' +
+          '.note{background:#f3f7f6;border-left:4px solid #057873;padding:14px;margin-bottom:18px;}' +
+          '.disc{font-size:13px;color:#555;border-top:1px solid #ccc;padding-top:12px;margin-top:24px;}' +
+          '@media print{body{padding:12px;}}' +
+          '</style></head><body>' +
+          bodyHtml +
+          '</body></html>'
+        );
+        win.document.close();
+        win.focus();
+        setTimeout(() => win.print(), 250);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    },
   };
 })();

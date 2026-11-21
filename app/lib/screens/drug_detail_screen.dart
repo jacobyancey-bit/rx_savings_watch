@@ -55,8 +55,12 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.share_outlined),
-            tooltip: 'Clinical Handout',
-            onPressed: () => DoctorHandoutSheet.show(context, drug),
+            tooltip: 'Doctor / Pharmacist Handout',
+            onPressed: () => DoctorHandoutSheet.show(
+              context,
+              drug,
+              selectedStrength: _selectedStrength,
+            ),
           ),
         ],
       ),
@@ -141,7 +145,11 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                     const SizedBox(height: 12),
                   ],
                   OutlinedButton.icon(
-                    onPressed: () => DoctorHandoutSheet.show(context, drug),
+                    onPressed: () => DoctorHandoutSheet.show(
+                      context,
+                      drug,
+                      selectedStrength: _selectedStrength,
+                    ),
                     icon: const Icon(Icons.badge_outlined, size: 16),
                     label: const Text('Show Doctor / Pharmacist Card'),
                   ),

@@ -6,4 +6,5 @@ class WebPushService {
   static Future<String> subscribe(String apiBaseUrl) async => 'unsupported';
   static Future<String> unsubscribe(String apiBaseUrl) async => 'unsupported';
   static Future<bool> showLocalTestNotification() async => false;
+  static bool printHandout(String title, String bodyHtml) => false;
 }

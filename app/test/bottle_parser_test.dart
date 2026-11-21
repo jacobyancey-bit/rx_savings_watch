@@ -71,5 +71,16 @@ void main() {
       expect(result.detectedNdc, '00378-6170-01');
       expect(result.queryTerm, '00378-6170-01');
     });
+
+    test('Extracts medication name from focused viewfinder crop without strength', () {
+      const focusedCrop = '''
+        METOPROLOL SUCCINATE
+        EXTENDED RELEASE
+      ''';
+
+      final result = BottleLabelParser.parse(focusedCrop, catalog);
+      expect(result.hasResult, isTrue);
+      expect(result.queryTerm?.toUpperCase(), 'METOPROLOL SUCCINATE');
+    });
   });
 }

@@ -20,9 +20,10 @@ class BottleScanParseResult {
 class BottleLabelParser {
   static final RegExp _ndcPattern = RegExp(r'\b\d{4,5}-\d{3,4}(?:-\d{1,2})?\b');
   static final RegExp _dosageLinePattern = RegExp(
-    r'\b([A-Za-z][A-Za-z\-]{2,28}(?:\s+[A-Za-z][A-Za-z\-]{2,20})?)\s+\d+(?:\.\d+)?\s*(?:MG|MCG|ML|GM|G|%|UNIT|UNITS|TAB|TABS|CAP|CAPS)\b',
+    r'\b([A-Za-z][A-Za-z\-]{2,28}(?:\s+[A-Za-z][A-Za-z\-]{1,20})?)\s+\d+(?:\.\d+)?\s*(?:MG|M6|MQ|MCG|ML|GM|G|%|UNIT|UNITS|TAB|TABS|CAP|CAPS)\b',
     caseSensitive: false,
   );
+  static final RegExp _cleanWordPattern = RegExp(r'^[A-Za-z][A-Za-z\-]{3,24}$');
 
   static const Set<String> _ignoredWords = {
     'TAKE', 'ONE', 'TWO', 'THREE', 'TABLET', 'TABLETS', 'CAPSULE', 'CAPSULES',
@@ -36,6 +37,12 @@ class BottleLabelParser {
     'EXP', 'EXPIRES', 'LOT', 'MFG', 'NDC', 'STORE', 'ROOM', 'TEMP', 'KEEP',
     'OUT', 'REACH', 'CHILDREN', 'GENERIC', 'FOR', 'SUBSTITUTED', 'COMMON',
     'BRAND', 'BEFORE', 'NEEDED', 'PAIN', 'USE', 'ONLY', 'AS', 'DIRECTED',
+    'EXTENDED', 'RELEASE', 'DELAYED', 'CHEWABLE', 'SOLUTION', 'SUSPENSION',
+    'CREAM', 'OINTMENT', 'INHALER', 'PATCH', 'DROPS', 'SPRAY', 'STREET',
+    'AVENUE', 'ROAD', 'DRIVE', 'LANE', 'SUITE', 'NORTH', 'SOUTH', 'EAST', 'WEST',
+    'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'JUNE', 'JULY', 'AUGUST',
+    'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER', 'PRESCRIPTION', 'WARNING',
+    'MAY', 'CAUSE', 'DROWSINESS', 'ALCOHOL', 'REFILLABLE', 'THROUGH', 'UNTIL',
   };
 
   /// Extract only the medication match or search term from raw OCR text.
@@ -109,6 +116,36 @@ class BottleLabelParser {
         detectedNdc: ndcMatch.group(0),
         queryTerm: ndcMatch.group(0),
       );
+    }
+
+    // 4. Focused viewfinder crop fallback: when the user framed ONLY the medication
+    // name inside the teal guide box (1–4 short lines) and the strength was on
+    // another line or slightly blurred, extract the cleanest medication candidate.
+    final nonEmptyLines = lines.map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+    if (nonEmptyLines.length <= 4) {
+      for (final line in nonEmptyLines) {
+        final upperLine = line.toUpperCase();
+        if (upperLine.contains('RX') ||
+            upperLine.contains('DR.') ||
+            upperLine.contains('DOB') ||
+            upperLine.contains('PHONE') ||
+            upperLine.contains('PHARMACY') ||
+            upperLine.contains('TAKE ') ||
+            upperLine.contains('REFILL')) {
+          continue;
+        }
+        final tokens = line
+            .replaceAll(RegExp(r'[^A-Za-z\-\s]'), ' ')
+            .split(RegExp(r'\s+'))
+            .where((w) => _cleanWordPattern.hasMatch(w) && !_ignoredWords.contains(w.toUpperCase()))
+            .toList();
+        if (tokens.isNotEmpty) {
+          final candidate = tokens.take(2).join(' ');
+          if (candidate.length >= 5) {
+            return BottleScanParseResult(queryTerm: candidate);
+          }
+        }
+      }
     }
 
     return const BottleScanParseResult();

@@ -154,6 +154,48 @@ class CabinetProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Import medications from another device by RxCUI list (zero-PII transfer).
+  /// Uses the anonymous, k-anonymity-chaffed check-updates endpoint to hydrate
+  /// each drug's canonical FDA/CMS status, then saves locally on this device.
+  Future<int> importRxcuis(List<String> rxcuis) async {
+    final newRxcuis = rxcuis
+        .map((r) => r.trim())
+        .where((r) => r.isNotEmpty && !isWatched(r))
+        .toSet()
+        .toList();
+
+    if (newRxcuis.isEmpty) return 0;
+
+    final response = await _apiService.checkUpdates(
+      rxcuis: newRxcuis,
+    );
+
+    final List returnedDrugs = response['drugs'] as List? ?? [];
+    int addedCount = 0;
+
+    for (final item in returnedDrugs) {
+      if (item is Map) {
+        final map = Map<String, dynamic>.from(item);
+        final drug = Drug.fromJson(map);
+        if (drug.rxcui.isNotEmpty && !isWatched(drug.rxcui)) {
+          _cabinet.add(drug);
+          addedCount++;
+        }
+      }
+    }
+
+    if (addedCount > 0) {
+      final checkedAt = response['checked_at'] as String? ?? DateTime.now().toIso8601String();
+      _lastChecked = checkedAt;
+      await _storageService.saveCabinet(_cabinet);
+      await _storageService.saveLastCheckedTimestamp(checkedAt);
+      await WebPushService.syncWatchedRxcuis(_cabinet.map((d) => d.rxcui).toList());
+      notifyListeners();
+    }
+
+    return addedCount;
+  }
+
   /// Sync cabinet medications anonymously with server
   Future<void> syncCabinet() async {
     if (_cabinet.isEmpty || _isSyncing) return;

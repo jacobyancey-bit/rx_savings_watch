@@ -1,14 +1,89 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cabinet_provider.dart';
+import '../services/cabinet_transfer_service.dart';
+import '../services/web_push_service.dart';
 import '../widgets/drug_card.dart';
 import '../widgets/privacy_promise_sheet.dart';
+import '../widgets/transfer_cabinet_sheet.dart';
 import 'drug_detail_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  bool _checkedIncomingTransfer = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkIncomingTransferLink());
+  }
+
+  Future<void> _checkIncomingTransferLink() async {
+    if (_checkedIncomingTransfer || !kIsWeb || !mounted) return;
+    _checkedIncomingTransfer = true;
+
+    final fragment = Uri.base.fragment;
+    if (fragment.isEmpty || !fragment.toLowerCase().contains('import=')) return;
+
+    final rxcuis = CabinetTransferService.parseRxcuisFromInput(fragment);
+    // Immediately scrub #import=... from browser address bar & history
+    WebPushService.clearUrlHash();
+
+    if (rxcuis.isEmpty || !mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Import Medication Cabinet?'),
+        content: Text(
+          'This private transfer link contains ${rxcuis.length} medication${rxcuis.length == 1 ? '' : 's'}. '
+          'Add them to this device\'s local cabinet?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final added = await context.read<CabinetProvider>().importRxcuis(rxcuis);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            added > 0
+                ? 'Imported $added medication${added == 1 ? '' : 's'} to this device!'
+                : 'Those medications are already in your cabinet.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not import medications right now. Please try again.'),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,17 +200,32 @@ class HomeScreen extends StatelessWidget {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'My Medication Cabinet (${cabinet.cabinet.length})',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'My Medication Cabinet (${cabinet.cabinet.length})',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (cabinet.lastChecked != null)
+                                  Text(
+                                    'Updated: ${cabinet.lastChecked!.split('T')[0]}',
+                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                                  ),
+                              ],
                             ),
                           ),
-                          if (cabinet.lastChecked != null)
-                            Text(
-                              'Updated: ${cabinet.lastChecked!.split('T')[0]}',
-                              style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                          TextButton.icon(
+                            onPressed: () => TransferCabinetSheet.show(context),
+                            icon: const Icon(Icons.devices_outlined, size: 18),
+                            label: const Text('Transfer'),
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(0, 44),
                             ),
+                          ),
                         ],
                       ),
                     ),

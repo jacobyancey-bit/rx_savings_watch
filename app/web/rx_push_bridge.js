@@ -186,5 +186,17 @@
         return false;
       }
     },
+
+    clearUrlHash: function () {
+      try {
+        if (window.location && window.location.hash) {
+          window.history.replaceState(
+            null,
+            '',
+            window.location.pathname + window.location.search
+          );
+        }
+      } catch (_) {}
+    },
   };
 })();

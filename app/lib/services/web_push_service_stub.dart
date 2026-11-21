@@ -7,4 +7,5 @@ class WebPushService {
   static Future<String> unsubscribe(String apiBaseUrl) async => 'unsupported';
   static Future<bool> showLocalTestNotification() async => false;
   static bool printHandout(String title, String bodyHtml) => false;
+  static void clearUrlHash() {}
 }

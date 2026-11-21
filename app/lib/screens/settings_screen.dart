@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/web_push_service.dart';
 import '../widgets/privacy_promise_sheet.dart';
+import '../widgets/transfer_cabinet_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -467,10 +468,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Because we never store your medicine list on our servers, erasing it here removes it completely.',
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            'Your medicine list is stored only on this device. You can privately transfer it to your phone or computer with a QR code or link, or erase it anytime.',
+            style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
+          SizedBox(
+            height: 48,
+            child: FilledButton.tonalIcon(
+              onPressed: () => TransferCabinetSheet.show(context),
+              icon: const Icon(Icons.devices_outlined),
+              label: const Text(
+                'Transfer Cabinet Between Devices',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
           SizedBox(
             height: 48,
             child: OutlinedButton.icon(

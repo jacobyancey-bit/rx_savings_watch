@@ -131,6 +131,7 @@ function createCheckUpdatesRouter(db) {
       for (const m of marketRows) {
         if (m.source === 'openfda_ndc') sourceSet.add('OpenFDA NDC Directory');
         if (m.source === 'cms_nadac') sourceSet.add('CMS NADAC Pricing');
+        if (m.source === 'dailymed') sourceSet.add('NLM DailyMed SPL');
       }
       if (activeShortages.length > 0) sourceSet.add('FDA Drug Shortages');
 

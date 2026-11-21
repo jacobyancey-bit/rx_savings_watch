@@ -9,6 +9,7 @@
     "test": "node --test tests/*.test.js",
     "backtest": "node scripts/backtest.js",
     "ingest": "node scripts/run-ingestion.js",
+    "ingest:live": "node scripts/run-live-ingestion.js",
     "detect": "node scripts/detect-launches.js",
     "init-db": "node scripts/init-db.js"
   },

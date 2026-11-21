@@ -662,8 +662,9 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
 
   void _showFlagIssueSheet(BuildContext context, Drug drug) {
     final options = <(String, String, IconData)>[
-      ('missing_dosage', 'Missing a dosage or strength', Icons.format_list_numbered),
       ('generic_available', 'A generic version is actually available', Icons.verified_outlined),
+      ('brand_only_now', 'No generic is actually available (Brand Only)', Icons.lock_clock),
+      ('missing_dosage', 'Missing a dosage or strength', Icons.format_list_numbered),
       ('price_looks_off', 'Estimated price looks outdated or off', Icons.attach_money),
       ('shortage_incorrect', 'Shortage status looks outdated', Icons.warning_amber_outlined),
     ];

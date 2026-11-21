@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('node:fs');
+const path = require('node:path');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -48,8 +50,8 @@ function createApp(db, options = {}) {
   // 4. Request Body Parsing with strict size bounds
   app.use(express.json({ limit: '64kb' }));
 
-  // 5. Zero-PII & Privacy Cache-Control headers
-  app.use((req, res, next) => {
+  // 5. Zero-PII & Privacy Cache-Control headers on API & health endpoints
+  app.use(['/api', '/health'], (req, res, next) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -66,6 +68,15 @@ function createApp(db, options = {}) {
   app.use('/api', createCheckUpdatesRouter(db));
   app.use('/api', createDrugsRouter(db));
   app.use('/api', createSchedulerRouter(scheduler));
+
+  // Serve Flutter Web App at '/' if built into server/public
+  const webPublicDir = path.join(__dirname, '..', 'public');
+  if (fs.existsSync(webPublicDir)) {
+    app.use(express.static(webPublicDir));
+    app.get('/', (req, res) => {
+      res.sendFile(path.join(webPublicDir, 'index.html'));
+    });
+  }
 
   // Error handling middleware
   app.use((err, req, res, next) => {

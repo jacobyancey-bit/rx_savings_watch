@@ -9,7 +9,7 @@ class NotificationService {
       : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
   Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (kIsWeb || _isInitialized) return;
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const darwinSettings = DarwinInitializationSettings(
@@ -44,6 +44,7 @@ class NotificationService {
     String? genericName,
     double? savingsPct,
   }) async {
+    if (kIsWeb) return;
     await initialize();
 
     final title = 'Generic Available: $drugName';
@@ -84,6 +85,7 @@ class NotificationService {
     required String drugName,
     required String reason,
   }) async {
+    if (kIsWeb) return;
     await initialize();
 
     final title = 'Shortage Alert: $drugName';

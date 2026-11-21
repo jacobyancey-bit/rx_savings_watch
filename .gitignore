@@ -6,3 +6,5 @@ server/data/*.db-*
 server/data/*.sqlite
 *.db
 *.sqlite
+server/public/*
+!server/public/.gitkeep

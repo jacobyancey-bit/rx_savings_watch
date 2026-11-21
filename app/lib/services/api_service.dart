@@ -22,6 +22,10 @@ class ApiService {
 
   static String get defaultBaseUrl {
     if (kIsWeb) {
+      final origin = Uri.base.origin;
+      if (origin.startsWith('http://') || origin.startsWith('https://')) {
+        return origin;
+      }
       return 'http://localhost:3000';
     }
     if (Platform.isAndroid) {

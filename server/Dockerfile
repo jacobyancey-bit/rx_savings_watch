@@ -29,6 +29,7 @@ COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY data/fixtures/ ./data/fixtures/
 COPY data/live_seed_drugs.json ./data/live_seed_drugs.json
+COPY public/ ./public/
 
 # Ensure data directory exists for volume mount
 RUN mkdir -p /app/data

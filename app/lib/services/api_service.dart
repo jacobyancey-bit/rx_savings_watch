@@ -124,6 +124,21 @@ class ApiService {
     };
   }
 
+  /// Fetch ONLY verified cash & discount pharmacy links that actually carry this prescription
+  Future<List<Map<String, dynamic>>> getVerifiedPartners(String rxcui) async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/api/drugs/$rxcui/partners'))
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200) return const [];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final list = data['partners'] as List? ?? [];
+      return list.whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Submit a strictly anonymous, zero-PII data quality flag (enum only, no free text)
   Future<bool> submitDataQualityFlag({
     required String rxcui,

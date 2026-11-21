@@ -133,6 +133,21 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
+
+-- 9. Verified Cash & Discount Pharmacy Partner Links Cache (7-day TTL, prevents dead buttons)
+CREATE TABLE IF NOT EXISTS partner_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    drug_id INTEGER NOT NULL REFERENCES drugs(id) ON DELETE CASCADE,
+    partner_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    url TEXT,
+    price_hint TEXT,
+    verified INTEGER NOT NULL DEFAULT 0,
+    checked_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(drug_id, partner_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_partner_links_drug ON partner_links(drug_id, verified);
 CREATE INDEX IF NOT EXISTS idx_shortages_generic ON drug_shortages(generic_name);
 
 -- 5. Alert Events Table: Detected commercial generic launches, price drops, and shortages

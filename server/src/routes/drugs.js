@@ -1,6 +1,7 @@
 const express = require('express');
 const config = require('../config');
 const { discoverAndIngestDrug } = require('../ingestion/live_feeds');
+const { getVerifiedPartnersForDrug } = require('../services/partnerResolver');
 
 const RXCUI_PATTERN = /^\d{1,12}$/;
 const ALLOWED_FLAG_TYPES = new Set([
@@ -195,6 +196,27 @@ function createDrugsRouter(db) {
       success: true,
       message: 'Thank you. Flag recorded anonymously with zero personal data.'
     });
+  });
+
+  // Verified Cash & Discount Pharmacy Links (returns ONLY partners confirmed to carry this drug)
+  router.get('/drugs/:rxcui/partners', async (req, res) => {
+    const rxcui = String(req.params.rxcui || '').trim();
+    if (!RXCUI_PATTERN.test(rxcui)) {
+      return res.status(400).json({ error: 'Bad Request', message: 'Invalid RxCUI format.' });
+    }
+
+    const drug = getDrugByRxcui.get(rxcui);
+    if (!drug) {
+      return res.status(404).json({ error: 'Drug not found' });
+    }
+
+    try {
+      const partners = await getVerifiedPartnersForDrug(db, drug);
+      res.json({ rxcui, partners });
+    } catch (err) {
+      console.error('[DrugsRouter] Partner resolution error:', err.message);
+      res.json({ rxcui, partners: [] });
+    }
   });
 
   return router;

@@ -69,6 +69,9 @@
       try {
         await worker.setParameters({
           tessedit_pageseg_mode: '6',
+          load_system_dawg: '0',
+          load_freq_dawg: '0',
+          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/-.% ',
         });
       } catch (_) {}
       activeWorker = worker;
@@ -127,6 +130,50 @@
     return unit === '%' ? m[1] + '%' : m[1] + ' ' + unit;
   }
 
+  function levenshtein(a, b) {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    const prev = new Array(b.length + 1);
+    const curr = new Array(b.length + 1);
+    for (let j = 0; j <= b.length; j++) prev[j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      curr[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+      }
+      for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
+    }
+    return prev[b.length];
+  }
+
+  function fuzzyMatchKnownPrefix(upperText) {
+    // 1. Direct substring match first
+    for (const prefix of KNOWN_RX_PREFIXES) {
+      if (upperText.includes(prefix)) return prefix;
+    }
+    // 2. Fuzzy 1-edit match on individual tokens (handles OCR typos like AMPMET, ANPHET, OEXTR)
+    const tokens = upperText
+      .replace(/0/g, 'O')
+      .replace(/1/g, 'I')
+      .replace(/[^A-Z\/\-]/g, ' ')
+      .split(/[\s\/\-]+/)
+      .filter((t) => t.length >= 5);
+
+    for (const tok of tokens) {
+      for (const prefix of KNOWN_RX_PREFIXES) {
+        if (prefix.includes('/') || prefix.includes('-')) continue;
+        if (Math.abs(tok.length - prefix.length) > 2) continue;
+        const maxDist = prefix.length >= 7 ? 2 : 1;
+        if (levenshtein(tok.slice(0, prefix.length), prefix) <= maxDist) {
+          return prefix;
+        }
+      }
+    }
+    return null;
+  }
+
   function extractDrugCandidate(text, confidence) {
     if (!text) return null;
     const trimmed = text.trim();
@@ -134,24 +181,27 @@
     const upper = trimmed.toUpperCase();
 
     // 1. Valid NDC code
-    if (confidence >= 38) {
+    if (confidence >= 30) {
       const ndcMatch = trimmed.match(/\b\d{4,5}-\d{3,4}(?:-\d{1,2})?\b/);
       if (ndcMatch) {
         return { key: ndcMatch[0], display: 'NDC ' + ndcMatch[0], isNdc: true };
       }
     }
 
-    // 2. Known pharmacy abbreviation or canonical prefix (e.g. AMPHET/DEXTR, ATORVAST)
-    if (confidence >= 32) {
-      for (const prefix of KNOWN_RX_PREFIXES) {
-        if (upper.includes(prefix)) {
-          return { key: prefix, display: prefix, isNdc: false };
-        }
+    // 2. Known pharmacy abbreviation or canonical prefix (with 1-edit OCR typo tolerance!)
+    if (confidence >= 22) {
+      const matchedPrefix = fuzzyMatchKnownPrefix(upper);
+      if (matchedPrefix) {
+        const display =
+          matchedPrefix === 'AMPHET' || matchedPrefix === 'DEXTR'
+            ? 'AMPHET/DEXTR'
+            : matchedPrefix;
+        return { key: display, display: display, isNdc: false };
       }
     }
 
     // 3. Explicit "<DRUG> <NUMBER> MG/MCG/ML" line
-    if (confidence >= 36) {
+    if (confidence >= 32) {
       const dosageMatch = trimmed.match(
         /\b([A-Za-z][A-Za-z\-\/]{3,24}(?:\s+[A-Za-z][A-Za-z\-\/]{2,18})?)\s+(\d+(?:\.\d+)?)\s*(MG|M6|MQ|MCG|ML|GM|G|%)\b/i
       );
@@ -165,7 +215,7 @@
     }
 
     // 4. Clean high-confidence medication word (5+ letters)
-    if (confidence >= 52) {
+    if (confidence >= 48) {
       const words = trimmed
         .replace(/[^A-Za-z\-\/\s]/g, ' ')
         .split(/\s+/)
@@ -504,7 +554,7 @@
 
       const finishCombined = () => {
         const combined =
-          (lockedDrug ? lockedDrug.rawText : '') +
+          (lockedDrug ? lockedDrug.display + '\n' + lockedDrug.rawText : '') +
           (lockedStrength ? '\n' + lockedStrength : '');
         finish({ type: 'text', text: combined.trim() });
       };

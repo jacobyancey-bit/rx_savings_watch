@@ -35,6 +35,8 @@ class BottleLabelParser {
     'AMPHET DEXTR': 'Adderall',
     'D-AMPHET': 'Adderall',
     'AMPHETAMINE SALTS': 'Adderall',
+    'AMPHET': 'Adderall',
+    'DEXTR': 'Adderall',
     'AMOX/CLAV': 'amoxicillin-clavulanate',
     'AMOX-CLAV': 'amoxicillin-clavulanate',
     'SULFAMETH/TMP': 'sulfamethoxazole-trimethoprim',

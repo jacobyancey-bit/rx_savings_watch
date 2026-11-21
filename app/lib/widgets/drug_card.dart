@@ -107,8 +107,21 @@ class DrugCard extends StatelessWidget {
                   ),
                 ],
 
-                // Plain-English substitution guidance when generic is commercially available
+                // Plain-English generic prescription name & substitution guidance when available
                 if (drug.commercialGenericAvailable) ...[
+                  Text(
+                    'Ask for: ${drug.genericName}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.bold,
+                      color: theme.brightness == Brightness.dark
+                          ? Colors.teal.shade200
+                          : Colors.teal.shade800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -118,8 +131,8 @@ class DrugCard extends StatelessWidget {
                             : Icons.medical_information_outlined,
                         size: 16,
                         color: drug.isAutoSubstitutable
-                            ? Colors.teal.shade700
-                            : Colors.indigo.shade700,
+                            ? (theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade700)
+                            : (theme.brightness == Brightness.dark ? Colors.indigo.shade200 : Colors.indigo.shade700),
                       ),
                       const SizedBox(width: 6),
                       Expanded(
@@ -128,9 +141,7 @@ class DrugCard extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
-                            color: drug.isAutoSubstitutable
-                                ? Colors.teal.shade900
-                                : Colors.indigo.shade900,
+                            color: theme.colorScheme.onSurface,
                           ),
                         ),
                       ),

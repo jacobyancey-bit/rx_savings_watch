@@ -279,6 +279,51 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
+                      if (drug.commercialGenericAvailable) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 10),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: cardBorder),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                drug.drugType == 'biologic'
+                                    ? 'Available Biosimilar Prescription:'
+                                    : 'Available Generic Prescription:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: iconColor,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                drug.genericName,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                              if (drug.genericManufacturers.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'FDA-approved manufacturers: ${drug.genericManufacturers.join(', ')}',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
                       Text(
                         drug.substitutionPlainGuidance,
                         style: theme.textTheme.bodyMedium?.copyWith(

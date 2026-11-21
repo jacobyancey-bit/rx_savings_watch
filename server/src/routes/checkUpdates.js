@@ -135,6 +135,13 @@ function createCheckUpdatesRouter(db) {
 
       const commercialGenericAvailable = hasApprovedGeneric && genericMarketRows.length > 0;
       const substitution = evaluateSubstitutionStatus(genericRows, drug.drug_type);
+      const genericManufacturers = [
+        ...new Set(
+          genericRows
+            .map(g => (g.applicant || '').trim())
+            .filter(Boolean)
+        )
+      ].slice(0, 6);
 
       // Build human-readable official verification sources
       const sourceSet = new Set(['NLM RxNorm']);
@@ -193,6 +200,7 @@ function createCheckUpdatesRouter(db) {
         biosimilar_status: substitution.biosimilar_status,
         verification_sources: [...sourceSet],
         generic_manufacturers_count: genericRows.length,
+        generic_manufacturers: genericManufacturers,
         pricing: {
           brand_nadac_unit_price: brandPrice,
           generic_nadac_unit_price: latestGenericPrice,

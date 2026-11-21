@@ -19,6 +19,7 @@ class Drug {
   final String? biosimilarStatus;
   final List<String> verificationSources;
   final int genericManufacturersCount;
+  final List<String> genericManufacturers;
   final PricingInfo? pricing;
   final bool hasActiveShortage;
   final List<Map<String, dynamic>> activeShortageDetails;
@@ -41,6 +42,7 @@ class Drug {
     this.biosimilarStatus,
     this.verificationSources = const [],
     this.genericManufacturersCount = 0,
+    this.genericManufacturers = const [],
     this.pricing,
     this.hasActiveShortage = false,
     this.activeShortageDetails = const [],
@@ -116,6 +118,9 @@ class Drug {
           ? List<String>.from(json['verification_sources'])
           : const [],
       genericManufacturersCount: json['generic_manufacturers_count'] as int? ?? 0,
+      genericManufacturers: json['generic_manufacturers'] is List
+          ? List<String>.from(json['generic_manufacturers'])
+          : const [],
       pricing: json['pricing'] is Map<String, dynamic>
           ? PricingInfo.fromJson(json['pricing'] as Map<String, dynamic>)
           : null,
@@ -149,6 +154,7 @@ class Drug {
       'biosimilar_status': biosimilarStatus,
       'verification_sources': verificationSources,
       'generic_manufacturers_count': genericManufacturersCount,
+      'generic_manufacturers': genericManufacturers,
       'pricing': pricing?.toJson(),
       'has_active_shortage': hasActiveShortage,
       'active_shortage_details': activeShortageDetails,
@@ -176,6 +182,9 @@ class Drug {
           ? List<String>.from(updateJson['verification_sources'])
           : verificationSources,
       genericManufacturersCount: updateJson['generic_manufacturers_count'] as int? ?? genericManufacturersCount,
+      genericManufacturers: updateJson['generic_manufacturers'] is List
+          ? List<String>.from(updateJson['generic_manufacturers'])
+          : genericManufacturers,
       pricing: updateJson['pricing'] is Map<String, dynamic>
           ? PricingInfo.fromJson(updateJson['pricing'] as Map<String, dynamic>)
           : pricing,

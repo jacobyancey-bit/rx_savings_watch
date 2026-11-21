@@ -88,6 +88,21 @@ CREATE TABLE IF NOT EXISTS drug_shortages (
 
 CREATE INDEX IF NOT EXISTS idx_shortages_drug ON drug_shortages(drug_id);
 CREATE INDEX IF NOT EXISTS idx_shortages_status ON drug_shortages(status);
+
+-- 5. Ingestion Runs Audit Table: Source provenance & freshness tracking
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    feed_name TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('success', 'warning', 'failed')),
+    records_processed INTEGER NOT NULL DEFAULT 0,
+    anomalies_rejected INTEGER NOT NULL DEFAULT 0,
+    source_date TEXT,
+    notes TEXT,
+    started_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_feed ON ingestion_runs(feed_name, completed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_shortages_generic ON drug_shortages(generic_name);
 
 -- 5. Alert Events Table: Detected commercial generic launches, price drops, and shortages

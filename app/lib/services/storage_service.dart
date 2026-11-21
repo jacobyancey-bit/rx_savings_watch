@@ -8,6 +8,7 @@ class StorageService {
   static const String _serverUrlKey = 'rx_savings_custom_server_url';
   static const String _allowLaunchNotifsKey = 'rx_savings_allow_launch_notifs';
   static const String _allowShortageNotifsKey = 'rx_savings_allow_shortage_notifs';
+  static const String _textScaleKey = 'rx_savings_text_scale_v1';
 
   Future<List<Drug>> loadCabinet() async {
     final prefs = await SharedPreferences.getInstance();
@@ -68,5 +69,21 @@ class StorageService {
   Future<void> setAllowShortageNotifications(bool allow) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_allowShortageNotifsKey, allow);
+  }
+
+  Future<double> getTextScale() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble(_textScaleKey) ?? 1.0;
+  }
+
+  Future<void> saveTextScale(double scale) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_textScaleKey, scale);
+  }
+
+  Future<void> clearAllLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_cabinetKey);
+    await prefs.remove(_lastCheckedKey);
   }
 }

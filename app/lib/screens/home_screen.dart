@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cabinet_provider.dart';
 import '../widgets/drug_card.dart';
+import '../widgets/privacy_promise_sheet.dart';
 import 'drug_detail_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
@@ -24,6 +25,31 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
         actions: [
+          TextButton(
+            onPressed: () async {
+              await cabinet.cycleTextScale();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).clearSnackBars();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Text size: ${cabinet.textScaleLabel}'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+            style: TextButton.styleFrom(
+              minimumSize: const Size(48, 48),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: Tooltip(
+              message: 'Change text size (${cabinet.textScaleLabel})',
+              child: const Text(
+                'Aa',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
           IconButton(
             icon: cabinet.isSyncing
                 ? const SizedBox(
@@ -32,11 +58,12 @@ class HomeScreen extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.sync),
-            tooltip: 'Sync updates anonymously',
+            tooltip: 'Check for generic updates',
             onPressed: cabinet.isSyncing ? null : () => cabinet.syncCabinet(),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings & Privacy',
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -54,6 +81,11 @@ class HomeScreen extends StatelessWidget {
                   // Overview stats hero banner
                   SliverToBoxAdapter(
                     child: _buildHeroBanner(context, cabinet),
+                  ),
+
+                  // Persistent "No Personal Data Collected" trust indicator
+                  const SliverToBoxAdapter(
+                    child: PrivacyTrustBanner(),
                   ),
 
                   // Graceful Offline Mode Banner

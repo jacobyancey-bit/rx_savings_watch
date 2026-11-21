@@ -11,6 +11,7 @@ class MockStorageService extends StorageService {
   String? storedUrl;
   bool allowLaunch = true;
   bool allowShortage = true;
+  double storedTextScale = 1.0;
 
   @override
   Future<List<Drug>> loadCabinet() async => List.from(storedCabinet);
@@ -50,6 +51,20 @@ class MockStorageService extends StorageService {
   @override
   Future<void> setAllowShortageNotifications(bool allow) async {
     allowShortage = allow;
+  }
+
+  @override
+  Future<double> getTextScale() async => storedTextScale;
+
+  @override
+  Future<void> saveTextScale(double scale) async {
+    storedTextScale = scale;
+  }
+
+  @override
+  Future<void> clearAllLocalData() async {
+    storedCabinet = [];
+    storedLastChecked = null;
   }
 }
 

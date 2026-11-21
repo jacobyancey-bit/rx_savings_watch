@@ -14,6 +14,10 @@ class Drug {
   // Status flags updated via sync
   final bool hasApprovedGeneric;
   final bool commercialGenericAvailable;
+  final String substitutionStatus; // 'auto_substitutable', 'doctor_prescription_required', 'brand_only'
+  final String? teCode;
+  final String? biosimilarStatus;
+  final List<String> verificationSources;
   final int genericManufacturersCount;
   final PricingInfo? pricing;
   final bool hasActiveShortage;
@@ -32,6 +36,10 @@ class Drug {
     this.drugType = 'small_molecule',
     this.hasApprovedGeneric = false,
     this.commercialGenericAvailable = false,
+    this.substitutionStatus = 'brand_only',
+    this.teCode,
+    this.biosimilarStatus,
+    this.verificationSources = const [],
     this.genericManufacturersCount = 0,
     this.pricing,
     this.hasActiveShortage = false,
@@ -39,6 +47,24 @@ class Drug {
     this.alerts = const [],
     this.lastUpdated,
   });
+
+  bool get isAutoSubstitutable => substitutionStatus == 'auto_substitutable';
+
+  String get substitutionPlainGuidance {
+    if (!commercialGenericAvailable) {
+      return hasApprovedGeneric
+          ? 'FDA approved, but not yet widely stocked at pharmacies.'
+          : 'Currently available as brand-name only.';
+    }
+    if (isAutoSubstitutable) {
+      if (drugType == 'biologic') {
+        return 'FDA Interchangeable — Your pharmacist can usually switch this automatically.';
+      }
+      final codeLabel = teCode != null ? ' (FDA $teCode-rated)' : '';
+      return 'Pharmacist can usually substitute automatically$codeLabel.';
+    }
+    return 'Requires a new prescription from your doctor to switch.';
+  }
 
   String get displayName => brandName != null && brandName!.isNotEmpty
       ? brandName!
@@ -70,6 +96,12 @@ class Drug {
       drugType: json['drug_type'] as String? ?? 'small_molecule',
       hasApprovedGeneric: json['has_approved_generic'] as bool? ?? false,
       commercialGenericAvailable: json['commercial_generic_available'] as bool? ?? false,
+      substitutionStatus: json['substitution_status'] as String? ?? 'brand_only',
+      teCode: json['te_code'] as String?,
+      biosimilarStatus: json['biosimilar_status'] as String?,
+      verificationSources: json['verification_sources'] is List
+          ? List<String>.from(json['verification_sources'])
+          : const [],
       genericManufacturersCount: json['generic_manufacturers_count'] as int? ?? 0,
       pricing: json['pricing'] is Map<String, dynamic>
           ? PricingInfo.fromJson(json['pricing'] as Map<String, dynamic>)
@@ -99,6 +131,10 @@ class Drug {
       'drug_type': drugType,
       'has_approved_generic': hasApprovedGeneric,
       'commercial_generic_available': commercialGenericAvailable,
+      'substitution_status': substitutionStatus,
+      'te_code': teCode,
+      'biosimilar_status': biosimilarStatus,
+      'verification_sources': verificationSources,
       'generic_manufacturers_count': genericManufacturersCount,
       'pricing': pricing?.toJson(),
       'has_active_shortage': hasActiveShortage,
@@ -120,6 +156,12 @@ class Drug {
       drugType: updateJson['drug_type'] as String? ?? drugType,
       hasApprovedGeneric: updateJson['has_approved_generic'] as bool? ?? hasApprovedGeneric,
       commercialGenericAvailable: updateJson['commercial_generic_available'] as bool? ?? commercialGenericAvailable,
+      substitutionStatus: updateJson['substitution_status'] as String? ?? substitutionStatus,
+      teCode: updateJson['te_code'] as String? ?? teCode,
+      biosimilarStatus: updateJson['biosimilar_status'] as String? ?? biosimilarStatus,
+      verificationSources: updateJson['verification_sources'] is List
+          ? List<String>.from(updateJson['verification_sources'])
+          : verificationSources,
       genericManufacturersCount: updateJson['generic_manufacturers_count'] as int? ?? genericManufacturersCount,
       pricing: updateJson['pricing'] is Map<String, dynamic>
           ? PricingInfo.fromJson(updateJson['pricing'] as Map<String, dynamic>)

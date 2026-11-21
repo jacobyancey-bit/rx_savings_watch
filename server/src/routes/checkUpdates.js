@@ -1,5 +1,7 @@
 const express = require('express');
 const config = require('../config');
+const { evaluateSubstitutionStatus } = require('../detector/rules');
+const { getDataFreshness } = require('../ingestion');
 
 /**
  * Anonymous Check Updates Endpoint
@@ -105,8 +107,12 @@ function createCheckUpdatesRouter(db) {
                (brandNameLower && desc.startsWith(brandNameLower));
       };
 
+      const today = checkedAt.split('T')[0];
+
       const genericMarketRows = marketRows.filter(m => 
-        m.is_commercialized && !isBrandRow(m) && (
+        m.is_commercialized &&
+        (!m.marketing_end_date || m.marketing_end_date >= today) &&
+        !isBrandRow(m) && (
           m.marketing_category === 'ANDA' || 
           (m.marketing_category === 'BLA' && drug.drug_type === 'biologic') ||
           m.source === 'cms_nadac'
@@ -114,13 +120,26 @@ function createCheckUpdatesRouter(db) {
       );
 
       const commercialGenericAvailable = hasApprovedGeneric && genericMarketRows.length > 0;
+      const substitution = evaluateSubstitutionStatus(genericRows, drug.drug_type);
 
-      // Calculate latest generic and brand prices
+      // Build human-readable official verification sources
+      const sourceSet = new Set(['NLM RxNorm']);
+      for (const g of genericRows) {
+        if (g.source === 'orange_book') sourceSet.add('FDA Orange Book');
+        if (g.source === 'purple_book') sourceSet.add('FDA Purple Book');
+      }
+      for (const m of marketRows) {
+        if (m.source === 'openfda_ndc') sourceSet.add('OpenFDA NDC Directory');
+        if (m.source === 'cms_nadac') sourceSet.add('CMS NADAC Pricing');
+      }
+      if (activeShortages.length > 0) sourceSet.add('FDA Drug Shortages');
+
+      // Calculate latest generic and brand prices (reject <= 0 anomalies)
       let latestGenericPrice = null;
       let brandPrice = null;
 
       for (const m of marketRows) {
-        if (m.nadac_per_unit) {
+        if (m.nadac_per_unit && m.nadac_per_unit > 0) {
           if (isBrandRow(m)) {
             brandPrice = m.nadac_per_unit;
           } else {
@@ -131,7 +150,7 @@ function createCheckUpdatesRouter(db) {
 
       let estimatedSavingsPct = null;
       if (brandPrice && latestGenericPrice && brandPrice > 0) {
-        estimatedSavingsPct = Number((((brandPrice - latestGenericPrice) / brandPrice) * 100).toFixed(1));
+        estimatedSavingsPct = Math.max(0, Number((((brandPrice - latestGenericPrice) / brandPrice) * 100).toFixed(1)));
       }
 
       const formattedAlerts = alertsSince.map(a => ({
@@ -154,6 +173,10 @@ function createCheckUpdatesRouter(db) {
         strength: drug.strength,
         has_approved_generic: hasApprovedGeneric,
         commercial_generic_available: commercialGenericAvailable,
+        substitution_status: commercialGenericAvailable ? substitution.substitution_status : 'brand_only',
+        te_code: substitution.te_code,
+        biosimilar_status: substitution.biosimilar_status,
+        verification_sources: [...sourceSet],
         generic_manufacturers_count: genericRows.length,
         pricing: {
           brand_nadac_unit_price: brandPrice,
@@ -175,6 +198,7 @@ function createCheckUpdatesRouter(db) {
     return res.json({
       success: true,
       checked_at: checkedAt,
+      data_freshness: getDataFreshness(db),
       updates_found: totalUpdatesFound,
       drugs: results
     });

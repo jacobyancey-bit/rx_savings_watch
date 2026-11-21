@@ -17,6 +17,7 @@ class CabinetProvider extends ChangeNotifier {
   int _lastNewAlertsCount = 0;
   bool _allowLaunchNotifs = true;
   bool _allowShortageNotifs = true;
+  double _textScale = 1.0;
 
   CabinetProvider({
     StorageService? storageService,
@@ -37,6 +38,13 @@ class CabinetProvider extends ChangeNotifier {
   String get serverUrl => _apiService.baseUrl;
   bool get allowLaunchNotifs => _allowLaunchNotifs;
   bool get allowShortageNotifs => _allowShortageNotifs;
+  double get textScale => _textScale;
+
+  String get textScaleLabel {
+    if (_textScale >= 1.3) return 'Extra Large';
+    if (_textScale >= 1.15) return 'Large';
+    return 'Standard';
+  }
 
   int get genericLaunchedCount =>
       _cabinet.where((d) => d.commercialGenericAvailable).length;
@@ -68,6 +76,7 @@ class CabinetProvider extends ChangeNotifier {
 
     _allowLaunchNotifs = await _storageService.getAllowLaunchNotifications();
     _allowShortageNotifs = await _storageService.getAllowShortageNotifications();
+    _textScale = await _storageService.getTextScale();
 
     _cabinet = await _storageService.loadCabinet();
     _lastChecked = await _storageService.getLastCheckedTimestamp();
@@ -95,6 +104,31 @@ class CabinetProvider extends ChangeNotifier {
   Future<void> setAllowShortageNotifs(bool allow) async {
     _allowShortageNotifs = allow;
     await _storageService.setAllowShortageNotifications(allow);
+    notifyListeners();
+  }
+
+  Future<void> setTextScale(double scale) async {
+    _textScale = scale.clamp(1.0, 1.4);
+    await _storageService.saveTextScale(_textScale);
+    notifyListeners();
+  }
+
+  Future<void> cycleTextScale() async {
+    if (_textScale < 1.15) {
+      await setTextScale(1.18);
+    } else if (_textScale < 1.3) {
+      await setTextScale(1.35);
+    } else {
+      await setTextScale(1.0);
+    }
+  }
+
+  Future<void> clearAllData() async {
+    _cabinet = [];
+    _lastChecked = null;
+    _syncError = null;
+    _lastNewAlertsCount = 0;
+    await _storageService.clearAllLocalData();
     notifyListeners();
   }
 

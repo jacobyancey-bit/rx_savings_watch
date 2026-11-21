@@ -76,11 +76,14 @@ function evaluateCommercialSignal(marketRows, regulatorySignal, asOfDate) {
     return isGenericCategory || hasGenericNadac;
   });
 
-  // Filter by cutoff date
+  // Filter by cutoff date and exclude discontinued NDCs
   const activeGenerics = genericCandidates.filter(m => {
     const marketDate = m.marketing_start_date || m.nadac_effective_date;
     if (!marketDate) return false;
-    return marketDate <= cutoff;
+    if (marketDate > cutoff) return false;
+    // Exclude discontinued products whose marketing ended before cutoff
+    if (m.marketing_end_date && m.marketing_end_date < cutoff) return false;
+    return true;
   });
 
   if (activeGenerics.length === 0) {
@@ -126,32 +129,82 @@ function evaluateCommercialSignal(marketRows, regulatorySignal, asOfDate) {
  * @returns {{ brandPrice: number|null, savingsPct: number|null }}
  */
 function calculateSavings(marketRows, genericPrice) {
-  if (!genericPrice) return { brandPrice: null, savingsPct: null };
+  if (!genericPrice || genericPrice <= 0) return { brandPrice: null, savingsPct: null, priceAnomaly: false };
 
   // Find brand NADAC price
   const brandRow = marketRows.find(m => 
-    m.nadac_per_unit && (
+    m.nadac_per_unit && m.nadac_per_unit > 0 && (
       m.marketing_category === 'NDA' ||
       m.labeler_name?.toLowerCase().includes('brand') ||
       m.package_description?.toLowerCase().includes('brand')
     )
   );
 
-  if (!brandRow || !brandRow.nadac_per_unit) {
-    return { brandPrice: null, savingsPct: null };
+  if (!brandRow || !brandRow.nadac_per_unit || brandRow.nadac_per_unit <= 0) {
+    return { brandPrice: null, savingsPct: null, priceAnomaly: false };
   }
 
   const brandPrice = brandRow.nadac_per_unit;
+  const priceAnomaly = genericPrice > brandPrice;
   const savingsPct = Number((((brandPrice - genericPrice) / brandPrice) * 100).toFixed(1));
 
   return {
     brandPrice,
-    savingsPct: Math.max(0, savingsPct)
+    savingsPct: Math.max(0, savingsPct),
+    priceAnomaly
+  };
+}
+
+/**
+ * Evaluate pharmacist auto-substitution eligibility based on FDA Orange Book TE codes
+ * and FDA Purple Book interchangeable biologic designations.
+ *
+ * @param {Array<object>} genericStatuses
+ * @param {string} drugType 'small_molecule' | 'biologic'
+ * @returns {{ substitution_status: string, te_code: string|null, biosimilar_status: string|null }}
+ */
+function evaluateSubstitutionStatus(genericStatuses, drugType = 'small_molecule') {
+  const approved = (genericStatuses || []).filter(gs => gs.is_approved_generic);
+  if (approved.length === 0) {
+    return { substitution_status: 'brand_only', te_code: null, biosimilar_status: null };
+  }
+
+  if (drugType === 'biologic') {
+    const interchangeable = approved.find(gs => gs.biosimilar_status === 'interchangeable');
+    if (interchangeable) {
+      return {
+        substitution_status: 'auto_substitutable',
+        te_code: null,
+        biosimilar_status: 'interchangeable'
+      };
+    }
+    return {
+      substitution_status: 'doctor_prescription_required',
+      te_code: null,
+      biosimilar_status: approved[0].biosimilar_status || 'biosimilar'
+    };
+  }
+
+  // Small molecule: FDA Orange Book 'A'-rated (AB, AA, AP, etc.) is therapeutically equivalent
+  const aRated = approved.find(gs => gs.te_code && gs.te_code.toUpperCase().startsWith('A'));
+  if (aRated) {
+    return {
+      substitution_status: 'auto_substitutable',
+      te_code: aRated.te_code.toUpperCase(),
+      biosimilar_status: null
+    };
+  }
+
+  return {
+    substitution_status: 'doctor_prescription_required',
+    te_code: approved[0].te_code ? approved[0].te_code.toUpperCase() : null,
+    biosimilar_status: null
   };
 }
 
 module.exports = {
   evaluateRegulatorySignal,
   evaluateCommercialSignal,
-  calculateSavings
+  calculateSavings,
+  evaluateSubstitutionStatus
 };

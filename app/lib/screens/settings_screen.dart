@@ -111,6 +111,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 24),
 
+          // Display & Readability (Senior-Friendly Text Size)
+          Text(
+            'Text Size & Readability',
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Choose a comfortable reading size across the entire app.',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 12),
+          SegmentedButton<double>(
+            segments: const [
+              ButtonSegment<double>(
+                value: 1.0,
+                label: Text('Standard'),
+              ),
+              ButtonSegment<double>(
+                value: 1.18,
+                label: Text('Large'),
+              ),
+              ButtonSegment<double>(
+                value: 1.35,
+                label: Text('Extra Large'),
+              ),
+            ],
+            selected: {
+              cabinet.textScale >= 1.3
+                  ? 1.35
+                  : cabinet.textScale >= 1.15
+                      ? 1.18
+                      : 1.0
+            },
+            onSelectionChanged: (selection) {
+              cabinet.setTextScale(selection.first);
+            },
+          ),
+
+          const SizedBox(height: 24),
+
           // Notification Preferences
           Text(
             'Notification Alerts',
@@ -214,6 +254,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ],
+          const SizedBox(height: 28),
+
+          // One-Tap Data Control
+          Text(
+            'Your Device Data',
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Because we never store your medicine list on our servers, erasing it here removes it completely.',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: cabinet.cabinet.isEmpty
+                  ? null
+                  : () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Erase Medication List?'),
+                          content: const Text(
+                            'This will remove all saved medications from this phone. You can add them back anytime.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(false),
+                              child: const Text('Cancel'),
+                            ),
+                            FilledButton(
+                              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              child: const Text('Erase All'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true && context.mounted) {
+                        await cabinet.clearAllData();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('All saved medications erased from this phone.')),
+                          );
+                        }
+                      }
+                    },
+              icon: Icon(Icons.delete_forever_outlined, color: Colors.red.shade700),
+              label: Text(
+                'Erase My Medication List',
+                style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: Colors.red.shade300),
+              ),
+            ),
+          ),
         ],
       ),
     );

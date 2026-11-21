@@ -17,23 +17,23 @@ class SignalBadges extends StatelessWidget {
     if (compact) {
       if (hasApprovedGeneric && commercialGenericAvailable) {
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: Colors.green.shade50,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.green.shade600, width: 1),
+            border: Border.all(color: Colors.green.shade700, width: 1.2),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.verified, size: 14, color: Colors.green.shade700),
-              const SizedBox(width: 4),
+              Icon(Icons.verified, size: 16, color: Colors.green.shade800),
+              const SizedBox(width: 6),
               Text(
-                '2-Signal Verified',
+                'Generic Available Now',
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 13,
                   fontWeight: FontWeight.bold,
-                  color: Colors.green.shade800,
+                  color: Colors.green.shade900,
                 ),
               ),
             ],
@@ -41,22 +41,22 @@ class SignalBadges extends StatelessWidget {
         );
       } else if (hasApprovedGeneric) {
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: Colors.amber.shade50,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.amber.shade600, width: 1),
+            border: Border.all(color: Colors.amber.shade700, width: 1.2),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.pending_actions, size: 14, color: Colors.amber.shade800),
-              const SizedBox(width: 4),
+              Icon(Icons.pending_actions, size: 16, color: Colors.amber.shade900),
+              const SizedBox(width: 6),
               Text(
-                'FDA Approved (Awaiting Launch)',
+                'FDA Approved — Coming Soon',
                 style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
                   color: Colors.amber.shade900,
                 ),
               ),
@@ -65,23 +65,23 @@ class SignalBadges extends StatelessWidget {
         );
       } else {
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: Colors.grey.shade100,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade400, width: 1),
+            border: Border.all(color: Colors.grey.shade500, width: 1),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.lock_clock, size: 14, color: Colors.grey.shade600),
-              const SizedBox(width: 4),
+              Icon(Icons.lock_clock, size: 16, color: Colors.grey.shade700),
+              const SizedBox(width: 6),
               Text(
-                'Brand Only',
+                'Brand Name Only',
                 style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.grey.shade700,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade800,
                 ),
               ),
             ],

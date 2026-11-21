@@ -114,6 +114,69 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               ),
             ),
 
+            const SizedBox(height: 18),
+
+            // Plain-English Substitution & Official Sources Trust Card
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: drug.commercialGenericAvailable
+                    ? (drug.isAutoSubstitutable ? Colors.teal.shade50 : Colors.indigo.shade50)
+                    : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: drug.commercialGenericAvailable
+                      ? (drug.isAutoSubstitutable ? Colors.teal.shade300 : Colors.indigo.shade300)
+                      : Colors.grey.shade300,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        drug.isAutoSubstitutable
+                            ? Icons.local_pharmacy
+                            : Icons.medical_information_outlined,
+                        color: drug.commercialGenericAvailable
+                            ? (drug.isAutoSubstitutable ? Colors.teal.shade800 : Colors.indigo.shade800)
+                            : Colors.grey.shade700,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Pharmacy Substitution Guidance',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    drug.substitutionPlainGuidance,
+                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+                  ),
+                  if (drug.verificationSources.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Verified using: ${drug.verificationSources.join(' • ')}',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
             const SizedBox(height: 24),
 
             // 2-Signal Status Section

@@ -107,17 +107,51 @@ class DrugCard extends StatelessWidget {
                   ),
                 ],
 
+                // Plain-English substitution guidance when generic is commercially available
+                if (drug.commercialGenericAvailable) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        drug.isAutoSubstitutable
+                            ? Icons.local_pharmacy_outlined
+                            : Icons.medical_information_outlined,
+                        size: 16,
+                        color: drug.isAutoSubstitutable
+                            ? Colors.teal.shade700
+                            : Colors.indigo.shade700,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          drug.substitutionPlainGuidance,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: drug.isAutoSubstitutable
+                                ? Colors.teal.shade900
+                                : Colors.indigo.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                ],
+
                 // Signal badges row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    SignalBadges(
-                      hasApprovedGeneric: drug.hasApprovedGeneric,
-                      commercialGenericAvailable: drug.commercialGenericAvailable,
-                      compact: true,
+                    Flexible(
+                      child: SignalBadges(
+                        hasApprovedGeneric: drug.hasApprovedGeneric,
+                        commercialGenericAvailable: drug.commercialGenericAvailable,
+                        compact: true,
+                      ),
                     ),
                     IconButton(
-                      icon: Icon(Icons.delete_outline, size: 20, color: Colors.grey.shade400),
+                      icon: Icon(Icons.delete_outline, size: 22, color: Colors.grey.shade600),
                       onPressed: onRemove,
                       tooltip: 'Remove from cabinet',
                     ),

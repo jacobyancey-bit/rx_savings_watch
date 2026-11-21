@@ -19,7 +19,7 @@ class ApiService {
   ApiService({String? baseUrl})
       : _configuredBaseUrl = baseUrl ?? defaultBaseUrl;
 
-  static const String productionBaseUrl = 'https://rx-savings-server-production.up.railway.app';
+  static const String productionBaseUrl = 'https://rx.dangling-dice-studios.com';
 
   static String get defaultBaseUrl {
     if (kIsWeb) {

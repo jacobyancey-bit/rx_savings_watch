@@ -14,6 +14,7 @@ const { discoverAndIngestDrug } = require('../src/ingestion/live_feeds');
 const { GenericLaunchDetector } = require('../src/detector');
 
 const GOLDEN_CASES = [
+  { query: 'Jornay PM', expectLaunch: false, mustIncludeStrength: '60 mg', note: 'Brand-only methylphenidate ER (no TE code — must NOT confuse with Ritalin/Concerta generics!)' },
   { query: 'Mydayis', expectLaunch: true, mustIncludeStrength: '37.5 mg', note: 'Multi-salt ER (AB2) with 12.5-50 mg doses' },
   { query: 'Adderall XR', expectLaunch: true, mustIncludeStrength: '20 mg', note: 'Multi-salt ER (AB1)' },
   { query: 'Vyvanse', expectLaunch: true, mustIncludeStrength: '30 mg', note: 'Recent small-molecule generic launch' },

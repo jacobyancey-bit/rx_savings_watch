@@ -180,9 +180,9 @@ function createDrugsRouter(db) {
 
     insertFlagStmt.run(drug.id, rxcui, issueType);
 
-    // Self-healing: if user flagged missing dosage or generic availability, trigger background refresh
+    // Self-healing: if user flagged missing dosage, generic availability, or false-positive brand-only, trigger background refresh
     if (
-      (issueType === 'missing_dosage' || issueType === 'generic_available') &&
+      (issueType === 'missing_dosage' || issueType === 'generic_available' || issueType === 'brand_only_now') &&
       process.env.NODE_ENV !== 'test'
     ) {
       const clientIp = req.ip || 'unknown';

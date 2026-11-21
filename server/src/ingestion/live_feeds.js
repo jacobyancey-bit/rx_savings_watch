@@ -93,48 +93,90 @@ async function fetchRxNormIngredients(rxcui) {
 }
 
 /**
- * 2. OpenFDA Drugs@FDA: Pull FDA approvals (ANDA / BLA / NDA) & Therapeutic Equivalence (TE) codes.
- * Handles both single-ingredient and multi-salt / multi-ingredient drugs (e.g., Mydayis AB2 vs Adderall XR AB1)
- * by resolving the reference NDA's substance_name + te_code when an exact generic_name search misses ANDAs.
+ * 2. OpenFDA Drugs@FDA: Reference-NDA-First FDA Orange Book Lookup!
+ *
+ * CRITICAL FDA ORANGE BOOK INVARIANT:
+ * A brand-name NDA ONLY receives a `te_code` (AB, AB1, AB2, AP, AA, etc.) once FDA approves
+ * a therapeutically equivalent generic ANDA for that exact formulation.
+ * If the reference brand NDA has NO `te_code` (e.g. Jornay PM NDA209311, Ozempic, Eliquis),
+ * then ZERO therapeutically equivalent generics exist — we MUST NOT pull generic ANDAs
+ * belonging to OTHER brands that merely share the same active ingredient (e.g. Ritalin/Concerta)!
  */
-async function fetchDrugsAtFda(genericName, brandName) {
-  const term = encodeURIComponent(`"${genericName}"`);
-  let data = await fetchJsonSafe(`https://api.fda.gov/drug/drugsfda.json?search=openfda.generic_name:${term}&limit=25`);
-  let results = data?.results || [];
-
-  const hasAnda = results.some(a => (a.application_number || '').startsWith('ANDA'));
-
-  // If no ANDAs found (common for multi-ingredient/multi-salt drugs where ingredient order varies),
-  // look up the reference brand NDA first to extract its canonical substance_name, dosage_form, and TE code!
-  if (!hasAnda && brandName) {
+async function fetchDrugsAtFda(genericName, brandName, drugType = 'small_molecule') {
+  // Step A: For small-molecule branded drugs, ALWAYS inspect the Reference Brand NDA first!
+  if (brandName && drugType !== 'biologic') {
     const bTerm = encodeURIComponent(`"${brandName}"`);
     const brandData = await fetchJsonSafe(
       `https://api.fda.gov/drug/drugsfda.json?search=products.brand_name:${bTerm}+OR+openfda.brand_name:${bTerm}&limit=10`
     );
     const brandResults = brandData?.results || [];
-    if (brandResults.length > 0) {
-      results = [...results, ...brandResults];
-      const refApp = brandResults.find(a => (a.application_number || '').startsWith('NDA')) || brandResults[0];
-      const substances = refApp?.openfda?.substance_name || [];
-      const refProducts = refApp?.products || [];
-      const refTeCode = refProducts.find(p => p.te_code)?.te_code || null;
-      const refDosageForm = refProducts.find(p => p.dosage_form)?.dosage_form || null;
+    const refNda = brandResults.find(a => (a.application_number || '').startsWith('NDA'));
+
+    if (refNda) {
+      const refProducts = (refNda.products || []).filter(
+        p => (p.marketing_status || '').toLowerCase() !== 'discontinued'
+      );
+      const activeProducts = refProducts.length > 0 ? refProducts : (refNda.products || []);
+      const teCodes = [...new Set(activeProducts.map(p => p.te_code).filter(Boolean))];
+      const refDosageForms = [...new Set(activeProducts.map(p => p.dosage_form).filter(Boolean))];
+      const substances = refNda.openfda?.substance_name || [];
+
+      // FDA Orange Book Rule: No TE code on the reference brand NDA => BRAND ONLY (no equivalent generic!)
+      if (teCodes.length === 0) {
+        return [refNda];
+      }
+
+      // Reference NDA HAS a TE code (e.g. AB, AB1, AB2, AP) -> fetch ONLY matching-TE ANDAs!
+      let results = [refNda];
+      const teCode = teCodes[0];
+      const formClause = refDosageForms[0]
+        ? `+AND+products.dosage_form:${encodeURIComponent(`"${refDosageForms[0]}"`)}`
+        : '';
+      const teClause = `+AND+products.te_code:${encodeURIComponent(`"${teCode}"`)}`;
 
       if (substances.length > 0) {
         const subQuery = encodeURIComponent(`"${substances[0]}"`);
-        const formClause = refDosageForm ? `+AND+products.dosage_form:${encodeURIComponent(`"${refDosageForm}"`)}` : '';
-        const teClause = refTeCode && /^AB\d$/i.test(refTeCode) ? `+AND+products.te_code:${encodeURIComponent(`"${refTeCode}"`)}` : '';
-        const matchedData = await fetchJsonSafe(
+        const matched = await fetchJsonSafe(
           `https://api.fda.gov/drug/drugsfda.json?search=openfda.substance_name:${subQuery}${formClause}${teClause}&limit=25`
         );
-        if (matchedData?.results?.length) {
-          results = [...results, ...matchedData.results];
+        if (matched?.results?.length) {
+          results = [...results, ...matched.results];
         }
       }
+
+      // Fallback if substance_name query missed (e.g. generic_name exact match with matching TE code)
+      if (!results.some(a => (a.application_number || '').startsWith('ANDA'))) {
+        const gTerm = encodeURIComponent(`"${genericName}"`);
+        const matched2 = await fetchJsonSafe(
+          `https://api.fda.gov/drug/drugsfda.json?search=openfda.generic_name:${gTerm}${teClause}&limit=25`
+        );
+        if (matched2?.results?.length) {
+          results = [...results, ...matched2.results];
+        }
+      }
+
+      const seen = new Set();
+      return results.filter(a => {
+        if (!a.application_number || seen.has(a.application_number)) return false;
+        seen.add(a.application_number);
+        return true;
+      });
     }
   }
 
-  // Deduplicate by application_number
+  // Step B: Biologics (Purple Book / BLA) or unbranded generic searches
+  const term = encodeURIComponent(`"${genericName}"`);
+  let data = await fetchJsonSafe(`https://api.fda.gov/drug/drugsfda.json?search=openfda.generic_name:${term}&limit=25`);
+  let results = data?.results || [];
+
+  if (results.length === 0 && brandName) {
+    const bTerm = encodeURIComponent(`"${brandName}"`);
+    const brandData = await fetchJsonSafe(
+      `https://api.fda.gov/drug/drugsfda.json?search=products.brand_name:${bTerm}+OR+openfda.brand_name:${bTerm}&limit=10`
+    );
+    results = brandData?.results || [];
+  }
+
   const seen = new Set();
   return results.filter(a => {
     if (!a.application_number || seen.has(a.application_number)) return false;
@@ -260,13 +302,28 @@ async function ingestLiveDrug(db, seed) {
   const drugRow = db.prepare('SELECT id FROM drugs WHERE rxcui = ?').get(rxcui);
   const drugId = drugRow.id;
 
-  // Fetch all drug-specific cross-reference feeds in parallel (including RxNorm canonical IN set)
-  const [fdaApps, ndcRows, nadacGenericRows, nadacBrandRows, dailyMedRows, rxIngredients] = await Promise.all([
-    fetchDrugsAtFda(genericName, brandName),
-    fetchOpenFdaNdcs(genericName),
-    fetchCmsNadacPrices(genericName),
+  // Fetch FDA Drugs@FDA first so we know if this brand has an approved TE-rated generic
+  const fdaApps = await fetchDrugsAtFda(genericName, brandName, drugType);
+  const hasFdaApprovedGeneric = fdaApps.some(app => {
+    const appNo = app.application_number || '';
+    if (appNo.startsWith('ANDA')) return true;
+    if (appNo.startsWith('BLA') && drugType === 'biologic') {
+      const products = app.products || [];
+      const isRefBrand = brandName && products.some(p => (p.brand_name || '').toLowerCase() === brandName.toLowerCase());
+      return !isRefBrand;
+    }
+    return false;
+  });
+
+  // For brand-only formulations (no TE-rated generic, e.g. Jornay PM), only pull brand NDCs/pricing
+  // so generic NDCs from OTHER brands sharing the same ingredient (e.g. Ritalin/Concerta) never pollute this drug!
+  const [ndcRows, nadacGenericRows, nadacBrandRows, dailyMedRows, rxIngredients] = await Promise.all([
+    hasFdaApprovedGeneric
+      ? fetchOpenFdaNdcs(genericName)
+      : (brandName ? fetchJsonSafe(`https://api.fda.gov/drug/ndc.json?search=finished:true+AND+brand_name:${encodeURIComponent(`"${brandName}"`)}&limit=25`).then(d => d?.results || []) : Promise.resolve([])),
+    hasFdaApprovedGeneric ? fetchCmsNadacPrices(genericName) : Promise.resolve([]),
     brandName ? fetchCmsNadacPrices(brandName) : Promise.resolve([]),
-    fetchDailyMedSpls(genericName),
+    fetchDailyMedSpls(brandName || genericName),
     fetchRxNormIngredients(rxcui),
   ]);
 
@@ -696,6 +753,12 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
       return db.prepare('SELECT * FROM drugs WHERE id = ?').get(existing.id);
     }
     return existing;
+  }
+
+  if (existing && options.forceRefresh) {
+    db.prepare('DELETE FROM generic_status WHERE drug_id = ?').run(existing.id);
+    db.prepare('DELETE FROM market_availability WHERE drug_id = ?').run(existing.id);
+    db.prepare('DELETE FROM alert_events WHERE drug_id = ?').run(existing.id);
   }
 
   // Run full 6-source cross-referenced live ingestion

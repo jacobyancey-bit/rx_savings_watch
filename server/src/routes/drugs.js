@@ -1,4 +1,5 @@
 const express = require('express');
+const { discoverAndIngestDrug } = require('../ingestion/live_feeds');
 
 /**
  * Drug details and lookup router with search and pagination
@@ -26,14 +27,30 @@ function createDrugsRouter(db) {
     WHERE brand_name LIKE ? OR generic_name LIKE ? OR rxcui LIKE ?
   `);
 
-  router.get('/drugs', (req, res) => {
+  router.get('/drugs', async (req, res) => {
     const query = req.query.q ? String(req.query.q).trim() : '';
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+    const allowLive = req.query.live !== 'false' && process.env.NODE_ENV !== 'test';
 
     const pattern = `%${query}%`;
-    const drugs = searchDrugsStmt.all(pattern, pattern, pattern, limit, offset);
-    const totalCount = countSearchDrugsStmt.get(pattern, pattern, pattern).total;
+    let drugs = searchDrugsStmt.all(pattern, pattern, pattern, limit, offset);
+    let totalCount = countSearchDrugsStmt.get(pattern, pattern, pattern).total;
+    let discoveredLive = false;
+
+    // On-demand canonical federal cross-reference when a medication isn't in the local DB yet
+    if (drugs.length === 0 && query.length >= 3 && offset === 0 && allowLive) {
+      try {
+        const discovered = await discoverAndIngestDrug(db, query);
+        if (discovered) {
+          discoveredLive = true;
+          drugs = [discovered];
+          totalCount = 1;
+        }
+      } catch (err) {
+        console.error('[DrugsRouter] Live discovery error:', err.message);
+      }
+    }
 
     res.json({
       query,
@@ -41,6 +58,7 @@ function createDrugsRouter(db) {
       total: totalCount,
       limit,
       offset,
+      discovered_live: discoveredLive,
       drugs
     });
   });

@@ -16,6 +16,16 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   final TextEditingController _copayController = TextEditingController(text: '60');
   double _monthlyBrandCopay = 60.0;
   final double _monthlyGenericCopay = 10.0;
+  String? _selectedStrength;
+
+  @override
+  void initState() {
+    super.initState();
+    final strengths = widget.drug.availableStrengths;
+    if (strengths.isNotEmpty) {
+      _selectedStrength = strengths.first;
+    }
+  }
 
   @override
   void dispose() {
@@ -105,6 +115,26 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  if (drug.availableStrengths.length > 1) ...[
+                    Text(
+                      'Select Your Dosage (Optional):',
+                      style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: drug.availableStrengths.map((s) {
+                        final isSelected = _selectedStrength == s;
+                        return ChoiceChip(
+                          label: Text(s),
+                          selected: isSelected,
+                          onSelected: (_) => setState(() => _selectedStrength = s),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   OutlinedButton.icon(
                     onPressed: () => DoctorHandoutSheet.show(context, drug),
                     icon: const Icon(Icons.badge_outlined, size: 16),

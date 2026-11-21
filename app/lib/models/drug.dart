@@ -70,13 +70,26 @@ class Drug {
       ? brandName!
       : genericName;
 
+  /// Distinct official strengths/dosages available for this canonical medication
+  List<String> get availableStrengths {
+    if (strength == null || strength!.trim().isEmpty) return const [];
+    return strength!
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
   String get subtitle {
     final parts = <String>[];
-    if (brandName != null && brandName!.isNotEmpty && brandName != genericName) {
+    if (brandName != null && brandName!.isNotEmpty && brandName!.toLowerCase() != genericName.toLowerCase()) {
       parts.add(genericName);
     }
-    if (strength != null && strength!.isNotEmpty) {
-      parts.add(strength!);
+    final strengths = availableStrengths;
+    if (strengths.length == 1) {
+      parts.add(strengths.first);
+    } else if (strengths.length > 1) {
+      parts.add('${strengths.length} strengths available');
     }
     if (dosageForm != null && dosageForm!.isNotEmpty) {
       parts.add(dosageForm!);

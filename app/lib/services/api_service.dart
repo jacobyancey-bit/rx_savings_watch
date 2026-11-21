@@ -57,7 +57,10 @@ class ApiService {
     };
 
     final uri = Uri.parse('$baseUrl/api/drugs').replace(queryParameters: queryParams);
-    final response = await http.get(uri).timeout(const Duration(seconds: 10));
+    final timeout = (query != null && query.isNotEmpty)
+        ? const Duration(seconds: 18)
+        : const Duration(seconds: 10);
+    final response = await http.get(uri).timeout(timeout);
 
     if (response.statusCode != 200) {
       throw Exception('Failed to fetch drugs catalog: ${response.statusCode}');

@@ -160,7 +160,7 @@ async function ingestLiveDrug(db, seed) {
       brand_name = COALESCE(excluded.brand_name, drugs.brand_name),
       generic_name = excluded.generic_name,
       dosage_form = COALESCE(drugs.dosage_form, excluded.dosage_form),
-      strength = COALESCE(drugs.strength, excluded.strength),
+      strength = COALESCE(excluded.strength, drugs.strength),
       drug_type = excluded.drug_type,
       updated_at = datetime('now')
   `).run(
@@ -168,8 +168,8 @@ async function ingestLiveDrug(db, seed) {
     brandName || null,
     genericName,
     genericName,
-    rxConcept?.dosage_form || null,
-    rxConcept?.strength || null,
+    seed.dosage_form || rxConcept?.dosage_form || null,
+    seed.strength || rxConcept?.strength || null,
     drugType
   );
 
@@ -445,8 +445,102 @@ async function runLiveIngestion(db, seedList, options = {}) {
   return summary;
 }
 
+function toTitleCase(str) {
+  if (!str) return null;
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map(w => (w.length > 0 ? w[0].toUpperCase() + w.slice(1) : ''))
+    .join(' ');
+}
+
+/**
+ * Live On-Demand Discovery & Canonical Cross-Reference:
+ * Resolves a user search term strictly to an official FDA/RxNorm canonical drug
+ * (user text is NEVER stored as the medication name), deduplicates by canonical name/RXCUI,
+ * collects available dosages into one record, runs 6-source ingestion + 2-signal detection,
+ * and saves it to SQLite for instant future lookups.
+ */
+async function discoverAndIngestDrug(db, rawQuery) {
+  const clean = String(rawQuery || '').replace(/[^a-zA-Z0-9\s\-]/g, '').trim();
+  if (clean.length < 3 || clean.length > 80) return null;
+
+  const term = encodeURIComponent(`"${clean}"`);
+  // 1. Resolve canonical brand/generic/strengths via OpenFDA NDC (finished products only)
+  let ndcData = await fetchJsonSafe(
+    `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+(brand_name:${term}+OR+generic_name:${term})&limit=15`
+  );
+
+  // Fallback: unquoted token search if exact phrase missed
+  if (!ndcData?.results?.length) {
+    const loose = encodeURIComponent(clean.split(' ')[0]);
+    ndcData = await fetchJsonSafe(
+      `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+(brand_name:${loose}+OR+generic_name:${loose})&limit=15`
+    );
+  }
+
+  const results = ndcData?.results || [];
+  if (results.length === 0) return null;
+
+  // Pick the best canonical match (prefer NDA/BLA reference brand if present)
+  const primary =
+    results.find(r => r.marketing_category === 'NDA' || r.marketing_category === 'BLA') ||
+    results[0];
+
+  const canonicalGeneric = (primary.generic_name || '').trim().toLowerCase();
+  if (!canonicalGeneric) return null;
+
+  const canonicalBrand = primary.brand_name ? toTitleCase(primary.brand_name.trim()) : null;
+  const drugType = (primary.marketing_category || '').includes('BLA') ? 'biologic' : 'small_molecule';
+  const dosageForm = primary.dosage_form ? primary.dosage_form.toLowerCase() : null;
+
+  // Deduplicate available strengths cleanly (up to 6 distinct doses on one card)
+  const strengthSet = new Set();
+  for (const r of results) {
+    if (Array.isArray(r.active_ingredients)) {
+      const s = r.active_ingredients
+        .map(ai => ai.strength)
+        .filter(Boolean)
+        .join(' / ');
+      if (s) strengthSet.add(s.toLowerCase().replace(/\/1\b/g, '').trim());
+    }
+  }
+  const combinedStrengths = [...strengthSet].slice(0, 6).join(', ') || null;
+
+  // Check if this canonical drug already exists (prevents duplicates!)
+  const existing = db.prepare(
+    'SELECT * FROM drugs WHERE LOWER(generic_name) = LOWER(?) OR (brand_name IS NOT NULL AND LOWER(brand_name) = LOWER(?))'
+  ).get(canonicalGeneric, canonicalBrand || '');
+
+  if (existing) {
+    return existing;
+  }
+
+  // Run full 6-source cross-referenced live ingestion
+  const ingestRes = await ingestLiveDrug(db, {
+    brand_name: canonicalBrand,
+    generic_name: canonicalGeneric,
+    drug_type: drugType,
+    dosage_form: dosageForm,
+    strength: combinedStrengths,
+  });
+
+  if (ingestRes.skipped || !ingestRes.rxcui) return null;
+
+  const savedDrug = db.prepare('SELECT * FROM drugs WHERE rxcui = ?').get(ingestRes.rxcui);
+  if (!savedDrug) return null;
+
+  // Immediately evaluate 2-signal commercial generic launch for the newly discovered drug
+  const { GenericLaunchDetector } = require('../detector');
+  const detector = new GenericLaunchDetector(db);
+  detector.evaluateDrug(savedDrug, { persistAlert: true });
+
+  return savedDrug;
+}
+
 module.exports = {
   runLiveIngestion,
   ingestLiveDrug,
   ingestLiveShortages,
+  discoverAndIngestDrug,
 };

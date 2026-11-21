@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/drug.dart';
@@ -13,15 +14,25 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _controller = TextEditingController();
+  Timer? _debounce;
   List<Drug> _allCatalogDrugs = [];
   List<Drug> _filteredDrugs = [];
   bool _isLoading = true;
+  bool _isLiveSearching = false;
+  String? _liveSearchNote;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
     _fetchCatalog();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchCatalog() async {
@@ -33,13 +44,15 @@ class _SearchScreenState extends State<SearchScreen> {
     try {
       final provider = context.read<CabinetProvider>();
       final api = ApiService(baseUrl: provider.serverUrl);
-      final drugs = await api.getDrugs();
+      final drugs = await api.getDrugs(limit: 100);
+      if (!mounted) return;
       setState(() {
         _allCatalogDrugs = drugs;
         _filteredDrugs = drugs;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Could not reach server at ${context.read<CabinetProvider>().serverUrl}. Ensure backend is running.';
         _isLoading = false;
@@ -47,21 +60,84 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  void _filter(String query) {
+  void _onSearchChanged(String rawQuery) {
+    _debounce?.cancel();
+    final query = rawQuery.trim();
+
     if (query.isEmpty) {
-      setState(() => _filteredDrugs = _allCatalogDrugs);
+      setState(() {
+        _filteredDrugs = _allCatalogDrugs;
+        _isLiveSearching = false;
+        _liveSearchNote = null;
+      });
       return;
     }
 
     final q = query.toLowerCase();
+    final localMatches = _allCatalogDrugs.where((d) {
+      final b = d.brandName?.toLowerCase() ?? '';
+      final g = d.genericName.toLowerCase();
+      final r = d.rxcui.toLowerCase();
+      return b.contains(q) || g.contains(q) || r.contains(q);
+    }).toList();
+
     setState(() {
-      _filteredDrugs = _allCatalogDrugs.where((d) {
-        final b = d.brandName?.toLowerCase() ?? '';
-        final g = d.genericName.toLowerCase();
-        final r = d.rxcui.toLowerCase();
-        return b.contains(q) || g.contains(q) || r.contains(q);
-      }).toList();
+      _filteredDrugs = localMatches;
+      _liveSearchNote = null;
     });
+
+    // If no local match and user typed at least 3 chars, auto-search official FDA/RxNorm databases after a short pause
+    if (localMatches.isEmpty && query.length >= 3) {
+      _debounce = Timer(const Duration(milliseconds: 700), () {
+        _searchLiveFederalDatabases(query);
+      });
+    }
+  }
+
+  Future<void> _searchLiveFederalDatabases(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.length < 3 || _isLiveSearching) return;
+
+    setState(() {
+      _isLiveSearching = true;
+      _liveSearchNote = null;
+    });
+
+    try {
+      final provider = context.read<CabinetProvider>();
+      final api = ApiService(baseUrl: provider.serverUrl);
+      final results = await api.getDrugs(query: trimmed, limit: 25);
+
+      if (!mounted) return;
+      if (results.isNotEmpty) {
+        // Merge newly discovered canonical drug(s) into local catalog list without duplicates
+        final updatedCatalog = List<Drug>.from(_allCatalogDrugs);
+        for (final d in results) {
+          if (!updatedCatalog.any((existing) => existing.rxcui == d.rxcui)) {
+            updatedCatalog.add(d);
+          }
+        }
+        updatedCatalog.sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+
+        setState(() {
+          _allCatalogDrugs = updatedCatalog;
+          _filteredDrugs = results;
+          _isLiveSearching = false;
+          _liveSearchNote = 'Verified via official FDA, RxNorm & CMS databases.';
+        });
+      } else {
+        setState(() {
+          _isLiveSearching = false;
+          _liveSearchNote = 'No official FDA medication matched "$trimmed". Check spelling and try the brand or generic name.';
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLiveSearching = false;
+        _liveSearchNote = 'Could not reach official databases right now. Please try again.';
+      });
+    }
   }
 
   @override
@@ -76,24 +152,29 @@ class _SearchScreenState extends State<SearchScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: TextField(
               controller: _controller,
-              onChanged: _filter,
+              onChanged: _onSearchChanged,
+              onSubmitted: _searchLiveFederalDatabases,
+              textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: 'Search brand (e.g. Vyvanse, Eliquis, Humira)...',
+                hintText: 'Type any U.S. brand or generic medicine...',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _controller.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear),
+                        tooltip: 'Clear search',
                         onPressed: () {
                           _controller.clear();
-                          _filter('');
+                          _onSearchChanged('');
                         },
                       )
                     : null,
                 filled: true,
-                fillColor: Colors.grey.shade100,
+                fillColor: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.grey.shade900
+                    : Colors.grey.shade100,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide.none,
@@ -101,6 +182,22 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
           ),
+          if (_liveSearchNote != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.verified_outlined, size: 16, color: Colors.teal.shade700),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _liveSearchNote!,
+                      style: TextStyle(fontSize: 13, color: Colors.teal.shade800),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: _buildBody(cabinetProvider),
           ),
@@ -140,51 +237,101 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
 
-    if (_filteredDrugs.isEmpty) {
+    if (_isLiveSearching) {
       return Center(
-        child: Text(
-          'No matching medications found.',
-          style: TextStyle(color: Colors.grey.shade600),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                'Searching official FDA, RxNorm & CMS databases...',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Cross-referencing generic approvals, active NDCs, and pharmacy pricing.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_filteredDrugs.isEmpty) {
+      final query = _controller.text.trim();
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.medication_outlined, size: 52, color: Colors.grey.shade400),
+              const SizedBox(height: 12),
+              Text(
+                'No local match for "$query".',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              if (query.length >= 3) ...[
+                const SizedBox(height: 14),
+                SizedBox(
+                  height: 48,
+                  child: FilledButton.icon(
+                    onPressed: () => _searchLiveFederalDatabases(query),
+                    icon: const Icon(Icons.travel_explore),
+                    label: Text('Search Official FDA Databases for "$query"'),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       );
     }
 
     return ListView.separated(
       itemCount: _filteredDrugs.length,
-      separatorBuilder: (context, index) => const Divider(height: 1),
+      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final drug = _filteredDrugs[index];
-        final isAlreadyAdded = cabinet.isWatched(drug.rxcui);
+        final watched = cabinet.isWatched(drug.rxcui);
 
         return ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           title: Text(
             drug.displayName,
-            style: const TextStyle(fontWeight: FontWeight.bold),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
           ),
-          subtitle: Text(drug.subtitle),
-          trailing: isAlreadyAdded
-              ? const Chip(
-                  avatar: Icon(Icons.check, size: 16, color: Colors.green),
-                  label: Text('In Cabinet', style: TextStyle(fontSize: 11)),
-                  backgroundColor: Color(0xFFE8F5E9),
+          subtitle: Text(
+            drug.subtitle,
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 13.5),
+          ),
+          trailing: watched
+              ? Chip(
+                  label: const Text('In Cabinet', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  backgroundColor: Colors.teal.shade50,
+                  side: BorderSide(color: Colors.teal.shade300),
                 )
-              : ElevatedButton.icon(
-                  onPressed: () {
-                    cabinet.addDrug(drug);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Added ${drug.displayName} to watched cabinet'),
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
+              : FilledButton.tonalIcon(
+                  onPressed: () async {
+                    await cabinet.addDrug(drug);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${drug.displayName} added to your cabinet'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
                   },
-                  icon: const Icon(Icons.add, size: 16),
+                  icon: const Icon(Icons.add, size: 18),
                   label: const Text('Watch'),
-                  style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
                 ),
         );
       },

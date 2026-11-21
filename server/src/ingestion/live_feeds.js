@@ -69,26 +69,82 @@ async function fetchRxNormConcept(brandName, genericName) {
 
 /**
  * 2. OpenFDA Drugs@FDA: Pull FDA approvals (ANDA / BLA / NDA) & Therapeutic Equivalence (TE) codes.
+ * Handles both single-ingredient and multi-salt / multi-ingredient drugs (e.g., Mydayis AB2 vs Adderall XR AB1)
+ * by resolving the reference NDA's substance_name + te_code when an exact generic_name search misses ANDAs.
  */
 async function fetchDrugsAtFda(genericName, brandName) {
   const term = encodeURIComponent(`"${genericName}"`);
   let data = await fetchJsonSafe(`https://api.fda.gov/drug/drugsfda.json?search=openfda.generic_name:${term}&limit=25`);
-  if (!data?.results?.length && brandName) {
+  let results = data?.results || [];
+
+  const hasAnda = results.some(a => (a.application_number || '').startsWith('ANDA'));
+
+  // If no ANDAs found (common for multi-ingredient/multi-salt drugs where ingredient order varies),
+  // look up the reference brand NDA first to extract its canonical substance_name, dosage_form, and TE code!
+  if (!hasAnda && brandName) {
     const bTerm = encodeURIComponent(`"${brandName}"`);
-    data = await fetchJsonSafe(`https://api.fda.gov/drug/drugsfda.json?search=openfda.brand_name:${bTerm}&limit=25`);
+    const brandData = await fetchJsonSafe(
+      `https://api.fda.gov/drug/drugsfda.json?search=products.brand_name:${bTerm}+OR+openfda.brand_name:${bTerm}&limit=10`
+    );
+    const brandResults = brandData?.results || [];
+    if (brandResults.length > 0) {
+      results = [...results, ...brandResults];
+      const refApp = brandResults.find(a => (a.application_number || '').startsWith('NDA')) || brandResults[0];
+      const substances = refApp?.openfda?.substance_name || [];
+      const refProducts = refApp?.products || [];
+      const refTeCode = refProducts.find(p => p.te_code)?.te_code || null;
+      const refDosageForm = refProducts.find(p => p.dosage_form)?.dosage_form || null;
+
+      if (substances.length > 0) {
+        const subQuery = encodeURIComponent(`"${substances[0]}"`);
+        const formClause = refDosageForm ? `+AND+products.dosage_form:${encodeURIComponent(`"${refDosageForm}"`)}` : '';
+        const teClause = refTeCode && /^AB\d$/i.test(refTeCode) ? `+AND+products.te_code:${encodeURIComponent(`"${refTeCode}"`)}` : '';
+        const matchedData = await fetchJsonSafe(
+          `https://api.fda.gov/drug/drugsfda.json?search=openfda.substance_name:${subQuery}${formClause}${teClause}&limit=25`
+        );
+        if (matchedData?.results?.length) {
+          results = [...results, ...matchedData.results];
+        }
+      }
+    }
   }
-  return data?.results || [];
+
+  // Deduplicate by application_number
+  const seen = new Set();
+  return results.filter(a => {
+    if (!a.application_number || seen.has(a.application_number)) return false;
+    seen.add(a.application_number);
+    return true;
+  });
 }
 
 /**
  * 3. OpenFDA NDC Directory: Pull FINISHED commercial drug listings (excluding bulk ingredients).
+ * For multi-ingredient drugs (comma-separated generic_name), also searches by primary active ingredient
+ * to capture commercial generic ANDA NDCs regardless of salt listing order.
  */
 async function fetchOpenFdaNdcs(genericName) {
   const term = encodeURIComponent(`"${genericName}"`);
   const data = await fetchJsonSafe(
     `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+generic_name:${term}&limit=25`
   );
-  return data?.results || [];
+  let results = data?.results || [];
+
+  const hasCommercialAnda = results.some(r => (r.marketing_category || '').includes('ANDA'));
+  if (!hasCommercialAnda && genericName.includes(',')) {
+    const primaryIngredient = genericName.split(',')[0].replace(/\band\b/gi, '').trim();
+    if (primaryIngredient.length >= 4) {
+      const ingTerm = encodeURIComponent(`"${primaryIngredient}"`);
+      const fallback = await fetchJsonSafe(
+        `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+marketing_category:"ANDA"+AND+active_ingredients.name:${ingTerm}&limit=25`
+      );
+      if (fallback?.results?.length) {
+        results = [...results, ...fallback.results];
+      }
+    }
+  }
+
+  return results;
 }
 
 /**
@@ -532,7 +588,7 @@ function extractCleanStrengths(ndcResults, rxConcepts = []) {
  * collects ALL official dosages into one record, runs 6-source ingestion + 2-signal detection,
  * and saves it to SQLite for instant future lookups.
  */
-async function discoverAndIngestDrug(db, rawQuery) {
+async function discoverAndIngestDrug(db, rawQuery, options = {}) {
   const clean = String(rawQuery || '').replace(/[^a-zA-Z0-9\s\-]/g, '').trim();
   if (clean.length < 3 || clean.length > 80) return null;
 
@@ -576,12 +632,12 @@ async function discoverAndIngestDrug(db, rawQuery) {
   const allStrengths = extractCleanStrengths(results, rxConcepts);
   const combinedStrengths = allStrengths.slice(0, 12).join(', ') || null;
 
-  // Check if this canonical drug already exists (update strengths if we found a more complete list!)
+  // Check if this canonical drug already exists (unless forceRefresh requested)
   const existing = db.prepare(
     'SELECT * FROM drugs WHERE LOWER(generic_name) = LOWER(?) OR (brand_name IS NOT NULL AND LOWER(brand_name) = LOWER(?))'
   ).get(canonicalGeneric, canonicalBrand || '');
 
-  if (existing) {
+  if (existing && !options.forceRefresh) {
     if (combinedStrengths && combinedStrengths.length > (existing.strength || '').length) {
       db.prepare("UPDATE drugs SET strength = ?, updated_at = datetime('now') WHERE id = ?")
         .run(combinedStrengths, existing.id);

@@ -186,8 +186,8 @@
       strength = strMatch[1] + ' ' + u;
     }
 
-    // 1. Known pharmacy abbreviation or canonical prefix (requires confidence >= 40)
-    if (confidence >= 40) {
+    // 1. Known pharmacy abbreviation or canonical prefix (requires confidence >= 35)
+    if (confidence >= 35) {
       for (const prefix of KNOWN_RX_PREFIXES) {
         if (upper.includes(prefix)) {
           const display = strength ? prefix + ' ' + strength : prefix;
@@ -196,8 +196,8 @@
       }
     }
 
-    // 2. Explicit "<DRUG> <NUMBER> MG/MCG/ML" line (requires confidence >= 45)
-    if (confidence >= 45) {
+    // 2. Explicit "<DRUG> <NUMBER> MG/MCG/ML" line (requires confidence >= 38)
+    if (confidence >= 38) {
       const dosageMatch = trimmed.match(
         /\b([A-Za-z][A-Za-z\-\/]{3,24}(?:\s+[A-Za-z][A-Za-z\-\/]{2,18})?)\s+(\d+(?:\.\d+)?)\s*(MG|M6|MQ|MCG|ML|GM|G|%)\b/i
       );
@@ -214,16 +214,16 @@
       }
     }
 
-    // 3. Valid NDC code (requires confidence >= 45)
-    if (confidence >= 45) {
+    // 3. Valid NDC code (requires confidence >= 40)
+    if (confidence >= 40) {
       const ndcMatch = trimmed.match(/\b\d{4,5}-\d{3,4}(?:-\d{1,2})?\b/);
       if (ndcMatch) {
         return { key: ndcMatch[0], display: 'NDC ' + ndcMatch[0], hasStrength: true };
       }
     }
 
-    // 4. Clean high-confidence medication word (requires confidence >= 60)
-    if (confidence >= 60) {
+    // 4. Clean high-confidence medication word (requires confidence >= 52)
+    if (confidence >= 52) {
       const words = trimmed
         .replace(/[^A-Za-z\-\/\s]/g, ' ')
         .split(/\s+/)
@@ -497,10 +497,8 @@
       let closed = false;
       let manualBusy = false;
       let autoLoopTimer = null;
-      let prevThumb = null;
-      let lastCandidateKey = null;
-      let lastCandidateText = '';
-      let consecutiveMatches = 0;
+      // 2-of-3 rolling temporal consensus window
+      const recentHits = [];
 
       const setStateUi = (state, msg) => {
         if (closed) return;
@@ -579,43 +577,28 @@
             const canvas = captureGuideBoxCanvas(video, guideBox);
             if (canvas) {
               try {
-                // Gate 1 & 2: Motion stability + Focus sharpness check BEFORE OCR
-                const { thumb, motionDiff, sharpness } = analyzeFrameQuality(canvas, prevThumb);
-                const hadPrev = prevThumb !== null;
-                prevThumb = thumb;
+                // Run OCR directly and use 2-of-3 rolling frame consensus to confirm
+                // steadiness, focus, and accuracy without deadlocking on sensor noise.
+                const { text, confidence } = await recognizeCanvas(canvas);
+                if (!closed && !manualBusy) {
+                  const cand = extractConsensusCandidate(text, confidence);
+                  if (cand) {
+                    recentHits.push({ key: cand.key, display: cand.display, text, hasStrength: cand.hasStrength });
+                    if (recentHits.length > 3) recentHits.shift();
 
-                if (hadPrev && motionDiff > 11) {
-                  consecutiveMatches = 0;
-                  lastCandidateKey = null;
-                  setStateUi('aim', 'Hold steady — camera is moving...');
-                } else if (sharpness < 180) {
-                  consecutiveMatches = 0;
-                  lastCandidateKey = null;
-                  setStateUi('aim', 'Focusing... Move bottle slightly back in good light');
-                } else {
-                  // Gate 3: Run OCR & require 2-frame temporal consensus
-                  const { text, confidence } = await recognizeCanvas(canvas);
-                  if (!closed && !manualBusy) {
-                    const cand = extractConsensusCandidate(text, confidence);
-                    if (cand) {
-                      if (cand.key === lastCandidateKey) {
-                        consecutiveMatches++;
-                        // Prefer whichever of the 2 agreeing frames also captured the mg strength
-                        const bestText = cand.hasStrength ? text : (lastCandidateText || text);
-                        if (consecutiveMatches >= 2) {
-                          setStateUi('confirmed', 'Confirmed: ' + cand.display + ' — Opening...');
-                          setTimeout(() => finish({ type: 'text', text: bestText }), 240);
-                          return;
-                        }
-                      } else {
-                        lastCandidateKey = cand.key;
-                        lastCandidateText = text;
-                        consecutiveMatches = 1;
-                        setStateUi('verifying', 'Hold steady — verifying ' + cand.display + '...');
-                      }
-                    } else {
-                      consecutiveMatches = 0;
-                      lastCandidateKey = null;
+                    const matching = recentHits.filter((h) => h.key === cand.key);
+                    if (matching.length >= 2) {
+                      const bestHit = matching.find((h) => h.hasStrength) || matching[matching.length - 1];
+                      setStateUi('confirmed', 'Confirmed: ' + bestHit.display + ' — Opening...');
+                      setTimeout(() => finish({ type: 'text', text: bestHit.text }), 220);
+                      return;
+                    }
+                    setStateUi('verifying', 'Hold steady — verifying ' + cand.display + ' (1/2)...');
+                  } else {
+                    recentHits.push({ key: null });
+                    if (recentHits.length > 3) recentHits.shift();
+                    const anyPending = recentHits.find((h) => h.key !== null);
+                    if (!anyPending) {
                       setStateUi('aim', 'Align medication name & mg inside the box');
                     }
                   }

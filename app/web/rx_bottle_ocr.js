@@ -1,16 +1,30 @@
 /**
- * On-Device Zero-PII Pill Bottle Camera OCR with Live Guided Viewfinder
+ * On-Device Zero-PII Pill Bottle Live Auto-Scanner
  *
- * Privacy guarantee:
- * - Opens a live rear-camera viewfinder with a focused horizontal guide box
- *   so users frame ONLY the medication name & strength (excluding personal PII).
- * - Crops strictly to the guide box before running Tesseract.js WASM OCR
- *   100% locally inside the browser.
- * - Photo bytes NEVER leave the device or touch any server.
- * - Immediately stops camera tracks and wipes canvas pixels in `finally`.
+ * Privacy & reliability guarantees:
+ * - Opens a live rear-camera viewfinder with a centered teal guide box.
+ * - Uses a SINGLE reusable Tesseract.js v5 WebAssembly worker so the 2nd, 3rd,
+ *   and 10th scans are just as fast and reliable as the 1st (no mobile WASM OOM).
+ * - Automatically scans the cropped teal box every ~900ms and locks on as soon
+ *   as a clear medication name/strength is in view—no shutter tap required
+ *   (with a manual "Snap Now" button still available).
+ * - Photo pixels NEVER leave the device and every frame canvas is wiped immediately.
  */
 (function () {
   let tesseractLoadPromise = null;
+  let workerPromise = null;
+  let activeWorker = null;
+
+  const IGNORED_AUTO_WORDS = new Set([
+    'TAKE', 'TABLET', 'TABLETS', 'CAPSULE', 'CAPSULES', 'DAILY', 'TWICE',
+    'EVERY', 'HOURS', 'MOUTH', 'WATER', 'REFILL', 'REFILLS', 'QUANTITY',
+    'FILLED', 'PRESCRIBER', 'DOCTOR', 'PHARMACY', 'WALGREENS', 'WALMART',
+    'COSTCO', 'KROGER', 'PUBLIX', 'TARGET', 'SAFEWAY', 'PATIENT', 'ADDRESS',
+    'PHONE', 'CAUTION', 'FEDERAL', 'PROHIBITS', 'TRANSFER', 'DISCARD',
+    'EXPIRES', 'STORE', 'CHILDREN', 'GENERIC', 'SUBSTITUTED', 'COMMON',
+    'BRAND', 'BEFORE', 'NEEDED', 'DIRECTED', 'EXTENDED', 'RELEASE',
+    'DELAYED', 'PRESCRIPTION', 'WARNING', 'DROWSINESS', 'ALCOHOL',
+  ]);
 
   function loadTesseract() {
     if (window.Tesseract) return Promise.resolve(window.Tesseract);
@@ -33,12 +47,91 @@
     return tesseractLoadPromise;
   }
 
+  async function getWorker() {
+    if (activeWorker) return activeWorker;
+    if (workerPromise) return workerPromise;
+
+    workerPromise = (async () => {
+      const Tesseract = await loadTesseract();
+      const worker = await Tesseract.createWorker('eng');
+      activeWorker = worker;
+      return worker;
+    })();
+
+    try {
+      return await workerPromise;
+    } catch (err) {
+      workerPromise = null;
+      activeWorker = null;
+      throw err;
+    }
+  }
+
+  async function resetWorker() {
+    const w = activeWorker;
+    activeWorker = null;
+    workerPromise = null;
+    if (w) {
+      try {
+        await w.terminate();
+      } catch (_) {}
+    }
+  }
+
+  async function recognizeCanvas(canvas) {
+    try {
+      const worker = await getWorker();
+      const res = await worker.recognize(canvas);
+      return {
+        text: res && res.data && res.data.text ? String(res.data.text) : '',
+        confidence: res && res.data && typeof res.data.confidence === 'number' ? res.data.confidence : 0,
+      };
+    } catch (_) {
+      // Recover automatically if mobile browser reclaimed the WASM worker
+      await resetWorker();
+      const worker = await getWorker();
+      const res = await worker.recognize(canvas);
+      return {
+        text: res && res.data && res.data.text ? String(res.data.text) : '',
+        confidence: res && res.data && typeof res.data.confidence === 'number' ? res.data.confidence : 0,
+      };
+    }
+  }
+
+  function looksLikeMedicationAutoHit(text, confidence) {
+    if (!text || confidence < 52) return false;
+    const trimmed = text.trim();
+    if (trimmed.length < 4) return false;
+
+    // 1. Strongest hit: "<WORD> <NUMBER> MG/MCG/ML/TAB/CAP"
+    if (/\b[A-Za-z][A-Za-z\-]{3,24}(?:\s+[A-Za-z][A-Za-z\-]{1,18})?\s+\d+(?:\.\d+)?\s*(?:MG|M6|MQ|MCG|ML|GM|G|%|TAB|TABS|CAP|CAPS)\b/i.test(trimmed)) {
+      return true;
+    }
+
+    // 2. Valid NDC code
+    if (/\b\d{4,5}-\d{3,4}(?:-\d{1,2})?\b/.test(trimmed)) {
+      return true;
+    }
+
+    // 3. Clean high-confidence medication word (5+ letters, not a pharmacy/instruction word)
+    if (confidence >= 68) {
+      const words = trimmed
+        .replace(/[^A-Za-z\-\s]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => /^[A-Za-z][A-Za-z\-]{4,22}$/.test(w) && !IGNORED_AUTO_WORDS.has(w.toUpperCase()));
+      if (words.length >= 1) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   function enhanceCanvasForOcr(canvas) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    // Compute min/max luminance for adaptive contrast stretch (handles dim light & bottle glare)
     let minL = 255;
     let maxL = 0;
     const grays = new Uint8Array(data.length / 4);
@@ -67,6 +160,42 @@
       canvas.width = 0;
       canvas.height = 0;
     } catch (_) {}
+  }
+
+  function captureGuideBoxCanvas(video, guideBox) {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh || video.readyState < 2) return null;
+
+    const vRect = video.getBoundingClientRect();
+    const bRect = guideBox.getBoundingClientRect();
+    if (!vRect.width || !vRect.height || !bRect.width || !bRect.height) return null;
+
+    const scale = Math.max(vRect.width / vw, vRect.height / vh);
+    const renderedW = vw * scale;
+    const renderedH = vh * scale;
+    const offsetX = (renderedW - vRect.width) / 2;
+    const offsetY = (renderedH - vRect.height) / 2;
+
+    const padX = bRect.width * 0.04;
+    const padY = bRect.height * 0.12;
+    const sx = Math.max(0, Math.round((bRect.left - vRect.left - padX + offsetX) / scale));
+    const sy = Math.max(0, Math.round((bRect.top - vRect.top - padY + offsetY) / scale));
+    const sw = Math.min(vw - sx, Math.round((bRect.width + padX * 2) / scale));
+    const sh = Math.min(vh - sy, Math.round((bRect.height + padY * 2) / scale));
+
+    if (sw < 20 || sh < 20) return null;
+
+    const targetW = Math.max(960, Math.min(1400, sw));
+    const targetH = Math.round((sh / Math.max(1, sw)) * targetW);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, targetW, targetH);
+
+    return enhanceCanvasForOcr(canvas);
   }
 
   function pickCameraImageFallback() {
@@ -148,13 +277,13 @@
   }
 
   /**
-   * Opens a full-screen live camera viewfinder with a centered teal guide box.
+   * Opens the live guided viewfinder with automatic label detection.
    * Resolves to:
-   *  - { type: 'canvas', canvas } when user snaps the framed label
-   *  - { type: 'fallback' } if user taps "Use Phone Camera" or live stream fails
+   *  - { type: 'text', text } when auto-scan locks on OR manual Snap finishes
+   *  - { type: 'fallback' } if live camera is unavailable or user taps Photo
    *  - { type: 'canceled' } if user taps Cancel
    */
-  function openGuidedViewfinder() {
+  function openGuidedAutoScanner() {
     return new Promise(async (resolve) => {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         resolve({ type: 'fallback' });
@@ -176,9 +305,6 @@
         return;
       }
 
-      // Start pre-loading Tesseract in the background while user lines up the bottle!
-      loadTesseract().catch(() => {});
-
       const overlay = document.createElement('div');
       overlay.id = 'rx-bottle-viewfinder';
       overlay.style.cssText =
@@ -193,7 +319,6 @@
       video.style.cssText =
         'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
 
-      // Dark vignette layer with cutout effect via huge box-shadow on the guide box
       const centerWrap = document.createElement('div');
       centerWrap.style.cssText =
         'position:relative;z-index:2;flex:1;display:flex;flex-direction:column;align-items:center;' +
@@ -201,18 +326,17 @@
 
       const topTip = document.createElement('div');
       topTip.style.cssText =
-        'background:rgba(0,0,0,0.72);padding:12px 16px;border-radius:14px;text-align:center;' +
+        'background:rgba(0,0,0,0.74);padding:12px 16px;border-radius:14px;text-align:center;' +
         'max-width:420px;margin-bottom:18px;border:1px solid rgba(255,255,255,0.18);';
       topTip.innerHTML =
-        '<div style="font-size:17px;font-weight:700;color:#5eead4;margin-bottom:4px;">Line up the MEDICATION NAME here</div>' +
-        '<div style="font-size:13.5px;line-height:1.35;color:#f1f5f9;">Hold the bottle flat in bright light so ONLY the drug name &amp; strength fill the teal box below.</div>';
+        '<div style="font-size:17px;font-weight:700;color:#5eead4;margin-bottom:4px;">Hold the MEDICATION NAME inside the box</div>' +
+        '<div style="font-size:13.5px;line-height:1.35;color:#f1f5f9;">Auto-scans as soon as the drug name is steady in view — no need to tap.</div>';
 
       const guideBox = document.createElement('div');
       guideBox.style.cssText =
         'width:min(88vw,440px);height:112px;border:3px solid #2dd4bf;border-radius:14px;' +
-        'box-shadow:0 0 0 9999px rgba(0,0,0,0.62);position:relative;background:transparent;';
+        'box-shadow:0 0 0 9999px rgba(0,0,0,0.62);position:relative;background:transparent;transition:border-color 0.2s ease;';
 
-      // Subtle corner/example label inside guide box
       const exampleHint = document.createElement('div');
       exampleHint.style.cssText =
         'position:absolute;bottom:-32px;left:0;right:0;text-align:center;font-size:12.5px;' +
@@ -220,17 +344,16 @@
       exampleHint.textContent = 'Example: ATORVASTATIN 20 MG  or  JORNAY PM 40 MG';
       guideBox.appendChild(exampleHint);
 
-      const privacySub = document.createElement('div');
-      privacySub.style.cssText =
-        'margin-top:46px;background:rgba(5,120,115,0.88);padding:7px 14px;border-radius:20px;' +
-        'font-size:12px;font-weight:600;color:#ffffff;text-align:center;';
-      privacySub.textContent = 'Keep your name & address outside the box • Photo auto-deleted';
+      const statusBadge = document.createElement('div');
+      statusBadge.style.cssText =
+        'margin-top:46px;background:rgba(5,120,115,0.9);padding:8px 16px;border-radius:20px;' +
+        'font-size:12.5px;font-weight:600;color:#ffffff;text-align:center;';
+      statusBadge.textContent = 'Preparing on-device scanner...';
 
       centerWrap.appendChild(topTip);
       centerWrap.appendChild(guideBox);
-      centerWrap.appendChild(privacySub);
+      centerWrap.appendChild(statusBadge);
 
-      // Bottom controls bar
       const controls = document.createElement('div');
       controls.style.cssText =
         'position:relative;z-index:3;background:rgba(0,0,0,0.85);padding:16px 20px calc(18px + env(safe-area-inset-bottom, 0px));' +
@@ -245,7 +368,7 @@
 
       const snapBtn = document.createElement('button');
       snapBtn.type = 'button';
-      snapBtn.textContent = 'Snap Label';
+      snapBtn.textContent = 'Snap Now';
       snapBtn.style.cssText =
         'flex:1;max-width:220px;background:#0d9488;color:#fff;border:2px solid #5eead4;border-radius:999px;' +
         'padding:15px 22px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(13,148,136,0.45);';
@@ -268,9 +391,16 @@
       document.body.appendChild(overlay);
 
       let closed = false;
+      let manualBusy = false;
+      let autoLoopTimer = null;
+
       const cleanup = () => {
         if (closed) return;
         closed = true;
+        if (autoLoopTimer) {
+          clearTimeout(autoLoopTimer);
+          autoLoopTimer = null;
+        }
         try {
           stream.getTracks().forEach((t) => t.stop());
         } catch (_) {}
@@ -280,65 +410,80 @@
         } catch (_) {}
       };
 
-      cancelBtn.addEventListener('click', () => {
+      const finish = (payload) => {
+        if (closed) return;
         cleanup();
-        resolve({ type: 'canceled' });
-      });
+        resolve(payload);
+      };
 
-      fallbackBtn.addEventListener('click', () => {
-        cleanup();
-        resolve({ type: 'fallback' });
-      });
+      cancelBtn.addEventListener('click', () => finish({ type: 'canceled' }));
+      fallbackBtn.addEventListener('click', () => finish({ type: 'fallback' }));
 
-      snapBtn.addEventListener('click', () => {
+      snapBtn.addEventListener('click', async () => {
+        if (closed || manualBusy) return;
+        manualBusy = true;
+        snapBtn.disabled = true;
+        snapBtn.textContent = 'Reading...';
+        statusBadge.textContent = 'Reading label on-device...';
+
+        const canvas = captureGuideBoxCanvas(video, guideBox);
+        if (!canvas) {
+          finish({ type: 'fallback' });
+          return;
+        }
         try {
-          const vw = video.videoWidth;
-          const vh = video.videoHeight;
-          if (!vw || !vh) {
-            cleanup();
-            resolve({ type: 'fallback' });
-            return;
-          }
-
-          // Map the guideBox viewport rectangle onto the object-fit:cover video frame
-          const vRect = video.getBoundingClientRect();
-          const bRect = guideBox.getBoundingClientRect();
-          const scale = Math.max(vRect.width / vw, vRect.height / vh);
-          const renderedW = vw * scale;
-          const renderedH = vh * scale;
-          const offsetX = (renderedW - vRect.width) / 2;
-          const offsetY = (renderedH - vRect.height) / 2;
-
-          // Slight 8% padding around box so tall letters aren't clipped
-          const padX = bRect.width * 0.04;
-          const padY = bRect.height * 0.12;
-          const sx = Math.max(0, Math.round((bRect.left - vRect.left - padX + offsetX) / scale));
-          const sy = Math.max(0, Math.round((bRect.top - vRect.top - padY + offsetY) / scale));
-          const sw = Math.min(vw - sx, Math.round((bRect.width + padX * 2) / scale));
-          const sh = Math.min(vh - sy, Math.round((bRect.height + padY * 2) / scale));
-
-          // Upscale crop to at least 1000px wide for sharper Tesseract recognition
-          const targetW = Math.max(1000, Math.min(1600, sw));
-          const targetH = Math.round((sh / Math.max(1, sw)) * targetW);
-
-          const canvas = document.createElement('canvas');
-          canvas.width = targetW;
-          canvas.height = targetH;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          ctx.drawImage(video, sx, sy, sw, sh, 0, 0, targetW, targetH);
-
-          enhanceCanvasForOcr(canvas);
-          cleanup();
-          resolve({ type: 'canvas', canvas });
+          const { text } = await recognizeCanvas(canvas);
+          finish({ type: 'text', text });
         } catch (_) {
-          cleanup();
-          resolve({ type: 'fallback' });
+          finish({ type: 'text', text: '' });
+        } finally {
+          wipeCanvas(canvas);
         }
       });
 
       try {
         await video.play();
       } catch (_) {}
+
+      // Warm up reusable worker and start gentle live auto-scan loop
+      (async () => {
+        try {
+          await getWorker();
+          if (closed) return;
+          statusBadge.textContent = 'Auto-scanning live • Photo never leaves device';
+
+          const runAutoTick = async () => {
+            if (closed || manualBusy) return;
+            const canvas = captureGuideBoxCanvas(video, guideBox);
+            if (canvas) {
+              try {
+                const { text, confidence } = await recognizeCanvas(canvas);
+                if (!closed && !manualBusy && looksLikeMedicationAutoHit(text, confidence)) {
+                  guideBox.style.borderColor = '#4ade80';
+                  statusBadge.style.background = 'rgba(22,163,74,0.95)';
+                  statusBadge.textContent = 'Medication detected! Opening...';
+                  setTimeout(() => finish({ type: 'text', text }), 180);
+                  return;
+                }
+              } catch (_) {
+                // Keep scanning silently on transient frame errors
+              } finally {
+                wipeCanvas(canvas);
+              }
+            }
+            if (!closed && !manualBusy) {
+              autoLoopTimer = setTimeout(runAutoTick, 850);
+            }
+          };
+
+          // Give camera autofocus 700ms before first auto-scan tick
+          autoLoopTimer = setTimeout(runAutoTick, 700);
+        } catch (_) {
+          if (!closed) {
+            statusBadge.textContent = 'Tap "Snap Now" when the drug name is in the box';
+          }
+        }
+      })();
     });
   }
 
@@ -348,29 +493,19 @@
     },
 
     scanBottle: async function () {
-      const viewResult = await openGuidedViewfinder();
+      const viewResult = await openGuidedAutoScanner();
       if (viewResult.type === 'canceled') return '__CANCELED__';
+      if (viewResult.type === 'text') return viewResult.text || '';
+
+      // Fallback to native file/camera input if live stream was unavailable or user tapped Photo
+      const file = await pickCameraImageFallback();
+      if (!file) return '__CANCELED__';
 
       let canvas = null;
       try {
-        if (viewResult.type === 'canvas') {
-          canvas = viewResult.canvas;
-          const Tesseract = await loadTesseract();
-          const result = await Tesseract.recognize(canvas, 'eng');
-          return result && result.data && result.data.text ? String(result.data.text) : '';
-        }
-
-        // Fallback to native file/camera input if live stream was unavailable or user chose Photo
-        const file = await pickCameraImageFallback();
-        if (!file) return '__CANCELED__';
-
-        const [Tesseract, processedCanvas] = await Promise.all([
-          loadTesseract(),
-          fileToCanvas(file),
-        ]);
-        canvas = processedCanvas;
-        const result = await Tesseract.recognize(canvas, 'eng');
-        return result && result.data && result.data.text ? String(result.data.text) : '';
+        canvas = await fileToCanvas(file);
+        const { text } = await recognizeCanvas(canvas);
+        return text || '';
       } finally {
         wipeCanvas(canvas);
       }

@@ -83,5 +83,16 @@ void main() {
       expect(result.hasResult, isTrue);
       expect(result.queryTerm?.toUpperCase(), 'METOPROLOL SUCCINATE');
     });
+
+    test('Expands shortened pharmacy abbreviation like AMPHET/DEXTR with strength', () {
+      const abbrevLabel = '''
+        AMPHET/DEXTR 20 MG ER CAP
+      ''';
+
+      final result = BottleLabelParser.parse(abbrevLabel, catalog);
+      expect(result.hasResult, isTrue);
+      expect(result.queryTerm, 'Adderall XR');
+      expect(result.detectedStrength, '20 mg');
+    });
   });
 }

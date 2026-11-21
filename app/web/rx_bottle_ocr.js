@@ -1,13 +1,11 @@
 /**
- * On-Device Zero-PII Pill Bottle Live Auto-Scanner
+ * On-Device Zero-PII Pill Bottle Live Auto-Scanner (v3)
  *
- * Privacy & reliability guarantees:
  * - Opens a live rear-camera viewfinder with a centered teal guide box.
- * - Uses a SINGLE reusable Tesseract.js v5 WebAssembly worker so the 2nd, 3rd,
- *   and 10th scans are just as fast and reliable as the 1st (no mobile WASM OOM).
- * - Automatically scans the cropped teal box every ~900ms and locks on as soon
- *   as a clear medication name/strength is in view—no shutter tap required
- *   (with a manual "Snap Now" button still available).
+ * - Uses a SINGLE reusable Tesseract.js v5 WebAssembly worker (PSM 6 for label crops)
+ *   so repeat scans stay fast and never hit mobile WASM memory limits.
+ * - Live auto-detects medication names (including abbreviated pharmacy labels like
+ *   "AMPHET/DEXTR 20 MG") every ~650ms and automatically locks on and opens the drug.
  * - Photo pixels NEVER leave the device and every frame canvas is wiped immediately.
  */
 (function () {
@@ -25,6 +23,17 @@
     'BRAND', 'BEFORE', 'NEEDED', 'DIRECTED', 'EXTENDED', 'RELEASE',
     'DELAYED', 'PRESCRIPTION', 'WARNING', 'DROWSINESS', 'ALCOHOL',
   ]);
+
+  // Common truncated U.S. pharmacy bottle prefixes so auto-scan locks on fast
+  const KNOWN_RX_PREFIXES = [
+    'AMPHET', 'DEXTR', 'METHYLPHEN', 'LISDEX', 'ATORVAST', 'LEVOTHYROX',
+    'METOPROL', 'LISINOP', 'LOSARTAN', 'AMLODIP', 'METFORM', 'ROSUVAST',
+    'ESCITALOP', 'SERTRAL', 'GABAPENT', 'OMEPRAZ', 'PANTOPRAZ', 'MONTELUK',
+    'ALBUTER', 'AMOX', 'CLAV', 'HYDROCHLOR', 'HCTZ', 'FLUTIC', 'BUDES',
+    'EMTRIC', 'TENOF', 'APIXAB', 'RIVAROX', 'EMPAGLIF', 'SEMAGLUT',
+    'TIRZEPAT', 'WARFAR', 'ELIQUIS', 'VYVANSE', 'JORNAY', 'MYDAYIS',
+    'ADDERALL', 'OZEMPIC', 'JARDIANCE', 'SYNTHROID', 'SYMBICORT', 'TRUVADA',
+  ];
 
   function loadTesseract() {
     if (window.Tesseract) return Promise.resolve(window.Tesseract);
@@ -54,6 +63,12 @@
     workerPromise = (async () => {
       const Tesseract = await loadTesseract();
       const worker = await Tesseract.createWorker('eng');
+      try {
+        // PSM 6 (single uniform block of text) is faster & sharper on cropped pill labels
+        await worker.setParameters({
+          tessedit_pageseg_mode: '6',
+        });
+      } catch (_) {}
       activeWorker = worker;
       return worker;
     })();
@@ -87,7 +102,6 @@
         confidence: res && res.data && typeof res.data.confidence === 'number' ? res.data.confidence : 0,
       };
     } catch (_) {
-      // Recover automatically if mobile browser reclaimed the WASM worker
       await resetWorker();
       const worker = await getWorker();
       const res = await worker.recognize(canvas);
@@ -98,33 +112,48 @@
     }
   }
 
-  function looksLikeMedicationAutoHit(text, confidence) {
-    if (!text || confidence < 52) return false;
+  function extractAutoHitSummary(text, confidence) {
+    if (!text) return null;
     const trimmed = text.trim();
-    if (trimmed.length < 4) return false;
+    if (trimmed.length < 4) return null;
+    const upper = trimmed.toUpperCase();
 
-    // 1. Strongest hit: "<WORD> <NUMBER> MG/MCG/ML/TAB/CAP"
-    if (/\b[A-Za-z][A-Za-z\-]{3,24}(?:\s+[A-Za-z][A-Za-z\-]{1,18})?\s+\d+(?:\.\d+)?\s*(?:MG|M6|MQ|MCG|ML|GM|G|%|TAB|TABS|CAP|CAPS)\b/i.test(trimmed)) {
-      return true;
+    // 1. Strongest hit: "<DRUG OR ABBREV/SLASH> <NUMBER> MG/MCG/ML/TAB/CAP" (works even at low curved-bottle confidence >= 25)
+    const dosageMatch = trimmed.match(
+      /\b([A-Za-z][A-Za-z\-\/\.]{2,26}(?:\s+[A-Za-z][A-Za-z\-\/\.]{1,18})?)\s+(\d+(?:\.\d+)?)\s*(MG|M6|MQ|MCG|ML|GM|G|%|TAB|TABS|CAP|CAPS)\b/i
+    );
+    if (dosageMatch && confidence >= 22) {
+      return (dosageMatch[1] + ' ' + dosageMatch[2] + ' ' + dosageMatch[3]).toUpperCase();
     }
 
-    // 2. Valid NDC code
-    if (/\b\d{4,5}-\d{3,4}(?:-\d{1,2})?\b/.test(trimmed)) {
-      return true;
-    }
-
-    // 3. Clean high-confidence medication word (5+ letters, not a pharmacy/instruction word)
-    if (confidence >= 68) {
-      const words = trimmed
-        .replace(/[^A-Za-z\-\s]/g, ' ')
-        .split(/\s+/)
-        .filter((w) => /^[A-Za-z][A-Za-z\-]{4,22}$/.test(w) && !IGNORED_AUTO_WORDS.has(w.toUpperCase()));
-      if (words.length >= 1) {
-        return true;
+    // 2. Known pharmacy abbreviation prefix (e.g., AMPHET/DEXTR, ATORVAST, METHYLPHEN)
+    if (confidence >= 25) {
+      for (const prefix of KNOWN_RX_PREFIXES) {
+        if (upper.includes(prefix)) {
+          const strength = upper.match(/\b(\d+(?:\.\d+)?)\s*(MG|M6|MQ|MCG|ML)\b/);
+          return strength ? prefix + ' ' + strength[1] + ' MG' : prefix;
+        }
       }
     }
 
-    return false;
+    // 3. Valid NDC code
+    const ndcMatch = trimmed.match(/\b\d{4,5}-\d{3,4}(?:-\d{1,2})?\b/);
+    if (ndcMatch && confidence >= 25) {
+      return 'NDC ' + ndcMatch[0];
+    }
+
+    // 4. Clean alphabetic medication word (5+ letters, not an instruction/pharmacy word)
+    if (confidence >= 45) {
+      const words = trimmed
+        .replace(/[^A-Za-z\-\/\s]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => /^[A-Za-z][A-Za-z\-\/]{4,24}$/.test(w) && !IGNORED_AUTO_WORDS.has(w.toUpperCase()));
+      if (words.length >= 1) {
+        return words.slice(0, 2).join(' ').toUpperCase();
+      }
+    }
+
+    return null;
   }
 
   function enhanceCanvasForOcr(canvas) {
@@ -145,7 +174,7 @@
     const range = Math.max(1, maxL - minL);
     for (let i = 0, p = 0; i < data.length; i += 4, p++) {
       const stretched = ((grays[p] - minL) * 255) / range;
-      const boosted = Math.max(0, Math.min(255, Math.round((stretched - 128) * 1.35 + 128)));
+      const boosted = Math.max(0, Math.min(255, Math.round((stretched - 128) * 1.4 + 128)));
       data[i] = data[i + 1] = data[i + 2] = boosted;
     }
     ctx.putImageData(imageData, 0, 0);
@@ -178,7 +207,7 @@
     const offsetY = (renderedH - vRect.height) / 2;
 
     const padX = bRect.width * 0.04;
-    const padY = bRect.height * 0.12;
+    const padY = bRect.height * 0.14;
     const sx = Math.max(0, Math.round((bRect.left - vRect.left - padX + offsetX) / scale));
     const sy = Math.max(0, Math.round((bRect.top - vRect.top - padY + offsetY) / scale));
     const sw = Math.min(vw - sx, Math.round((bRect.width + padX * 2) / scale));
@@ -186,7 +215,7 @@
 
     if (sw < 20 || sh < 20) return null;
 
-    const targetW = Math.max(960, Math.min(1400, sw));
+    const targetW = Math.max(960, Math.min(1300, sw));
     const targetH = Math.round((sh / Math.max(1, sw)) * targetW);
 
     const canvas = document.createElement('canvas');
@@ -276,13 +305,6 @@
     });
   }
 
-  /**
-   * Opens the live guided viewfinder with automatic label detection.
-   * Resolves to:
-   *  - { type: 'text', text } when auto-scan locks on OR manual Snap finishes
-   *  - { type: 'fallback' } if live camera is unavailable or user taps Photo
-   *  - { type: 'canceled' } if user taps Cancel
-   */
   function openGuidedAutoScanner() {
     return new Promise(async (resolve) => {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -326,29 +348,29 @@
 
       const topTip = document.createElement('div');
       topTip.style.cssText =
-        'background:rgba(0,0,0,0.74);padding:12px 16px;border-radius:14px;text-align:center;' +
+        'background:rgba(0,0,0,0.76);padding:12px 16px;border-radius:14px;text-align:center;' +
         'max-width:420px;margin-bottom:18px;border:1px solid rgba(255,255,255,0.18);';
       topTip.innerHTML =
-        '<div style="font-size:17px;font-weight:700;color:#5eead4;margin-bottom:4px;">Hold the MEDICATION NAME inside the box</div>' +
-        '<div style="font-size:13.5px;line-height:1.35;color:#f1f5f9;">Auto-scans as soon as the drug name is steady in view — no need to tap.</div>';
+        '<div style="font-size:17px;font-weight:700;color:#5eead4;margin-bottom:4px;">Hold the MEDICATION NAME + MG in the box</div>' +
+        '<div style="font-size:13.5px;line-height:1.35;color:#f1f5f9;">Auto-detects as soon as the label is steady — no need to press a button.</div>';
 
       const guideBox = document.createElement('div');
       guideBox.style.cssText =
-        'width:min(88vw,440px);height:112px;border:3px solid #2dd4bf;border-radius:14px;' +
+        'width:min(88vw,440px);height:118px;border:3px solid #2dd4bf;border-radius:14px;' +
         'box-shadow:0 0 0 9999px rgba(0,0,0,0.62);position:relative;background:transparent;transition:border-color 0.2s ease;';
 
       const exampleHint = document.createElement('div');
       exampleHint.style.cssText =
         'position:absolute;bottom:-32px;left:0;right:0;text-align:center;font-size:12.5px;' +
         'color:#e2e8f0;text-shadow:0 1px 3px #000;font-weight:600;';
-      exampleHint.textContent = 'Example: ATORVASTATIN 20 MG  or  JORNAY PM 40 MG';
+      exampleHint.textContent = 'Works with shortened labels too (e.g. AMPHET/DEXTR 20 MG)';
       guideBox.appendChild(exampleHint);
 
       const statusBadge = document.createElement('div');
       statusBadge.style.cssText =
-        'margin-top:46px;background:rgba(5,120,115,0.9);padding:8px 16px;border-radius:20px;' +
-        'font-size:12.5px;font-weight:600;color:#ffffff;text-align:center;';
-      statusBadge.textContent = 'Preparing on-device scanner...';
+        'margin-top:46px;background:rgba(5,120,115,0.92);padding:8px 16px;border-radius:20px;' +
+        'font-size:12.5px;font-weight:600;color:#ffffff;text-align:center;max-width:90vw;';
+      statusBadge.textContent = 'Starting live auto-scanner...';
 
       centerWrap.appendChild(topTip);
       centerWrap.appendChild(guideBox);
@@ -393,6 +415,7 @@
       let closed = false;
       let manualBusy = false;
       let autoLoopTimer = null;
+      let scanCount = 0;
 
       const cleanup = () => {
         if (closed) return;
@@ -445,39 +468,44 @@
         await video.play();
       } catch (_) {}
 
-      // Warm up reusable worker and start gentle live auto-scan loop
       (async () => {
         try {
           await getWorker();
           if (closed) return;
-          statusBadge.textContent = 'Auto-scanning live • Photo never leaves device';
+          statusBadge.textContent = 'Live Auto-Scan Active • Hold label steady';
 
           const runAutoTick = async () => {
             if (closed || manualBusy) return;
             const canvas = captureGuideBoxCanvas(video, guideBox);
             if (canvas) {
+              scanCount++;
               try {
                 const { text, confidence } = await recognizeCanvas(canvas);
-                if (!closed && !manualBusy && looksLikeMedicationAutoHit(text, confidence)) {
-                  guideBox.style.borderColor = '#4ade80';
-                  statusBadge.style.background = 'rgba(22,163,74,0.95)';
-                  statusBadge.textContent = 'Medication detected! Opening...';
-                  setTimeout(() => finish({ type: 'text', text }), 180);
-                  return;
+                if (!closed && !manualBusy) {
+                  const hit = extractAutoHitSummary(text, confidence);
+                  if (hit) {
+                    guideBox.style.borderColor = '#4ade80';
+                    statusBadge.style.background = 'rgba(22,163,74,0.95)';
+                    statusBadge.textContent = 'Detected: ' + hit + ' — Opening...';
+                    setTimeout(() => finish({ type: 'text', text }), 220);
+                    return;
+                  }
+                  statusBadge.textContent =
+                    scanCount % 2 === 0
+                      ? 'Scanning live... Move slightly closer if blurry'
+                      : 'Live Auto-Scan Active • Hold label steady';
                 }
               } catch (_) {
-                // Keep scanning silently on transient frame errors
               } finally {
                 wipeCanvas(canvas);
               }
             }
             if (!closed && !manualBusy) {
-              autoLoopTimer = setTimeout(runAutoTick, 850);
+              autoLoopTimer = setTimeout(runAutoTick, 650);
             }
           };
 
-          // Give camera autofocus 700ms before first auto-scan tick
-          autoLoopTimer = setTimeout(runAutoTick, 700);
+          autoLoopTimer = setTimeout(runAutoTick, 600);
         } catch (_) {
           if (!closed) {
             statusBadge.textContent = 'Tap "Snap Now" when the drug name is in the box';
@@ -497,7 +525,6 @@
       if (viewResult.type === 'canceled') return '__CANCELED__';
       if (viewResult.type === 'text') return viewResult.text || '';
 
-      // Fallback to native file/camera input if live stream was unavailable or user tapped Photo
       const file = await pickCameraImageFallback();
       if (!file) return '__CANCELED__';
 

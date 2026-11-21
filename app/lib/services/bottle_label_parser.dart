@@ -22,10 +22,84 @@ class BottleScanParseResult {
 class BottleLabelParser {
   static final RegExp _ndcPattern = RegExp(r'\b\d{4,5}-\d{3,4}(?:-\d{1,2})?\b');
   static final RegExp _dosageLinePattern = RegExp(
-    r'\b([A-Za-z][A-Za-z\-]{2,28}(?:\s+[A-Za-z][A-Za-z\-]{1,20})?)\s+\d+(?:\.\d+)?\s*(?:MG|M6|MQ|MCG|ML|GM|G|%|UNIT|UNITS|TAB|TABS|CAP|CAPS)\b',
+    r'\b([A-Za-z][A-Za-z\-\/\.]{2,28}(?:\s+[A-Za-z][A-Za-z\-\/\.]{1,20})?)\s+\d+(?:\.\d+)?\s*(?:MG|M6|MQ|MCG|ML|GM|G|%|UNIT|UNITS|TAB|TABS|CAP|CAPS)\b',
     caseSensitive: false,
   );
-  static final RegExp _cleanWordPattern = RegExp(r'^[A-Za-z][A-Za-z\-]{3,24}$');
+  static final RegExp _cleanWordPattern = RegExp(r'^[A-Za-z][A-Za-z\-\/]{3,26}$');
+
+  /// Common shortened U.S. pharmacy bottle label abbreviations mapped to
+  /// canonical FDA/RxNorm search terms (longest/most specific keys checked first).
+  static const Map<String, String> _pharmacyAbbreviations = {
+    'AMPHET/DEXTR': 'Adderall',
+    'AMPHET-DEXTR': 'Adderall',
+    'AMPHET DEXTR': 'Adderall',
+    'D-AMPHET': 'Adderall',
+    'AMPHETAMINE SALTS': 'Adderall',
+    'AMOX/CLAV': 'amoxicillin-clavulanate',
+    'AMOX-CLAV': 'amoxicillin-clavulanate',
+    'SULFAMETH/TMP': 'sulfamethoxazole-trimethoprim',
+    'SMZ-TMP': 'sulfamethoxazole-trimethoprim',
+    'SMZ/TMP': 'sulfamethoxazole-trimethoprim',
+    'FLUTIC/SALM': 'fluticasone-salmeterol',
+    'BUDES/FORMOT': 'Symbicort',
+    'EMTRIC/TENOF': 'Truvada',
+    'HYDROCOD/APAP': 'hydrocodone-acetaminophen',
+    'OXYCOD/APAP': 'oxycodone-acetaminophen',
+    'LOSARTAN/HCTZ': 'losartan-hydrochlorothiazide',
+    'LISINOP/HCTZ': 'lisinopril-hydrochlorothiazide',
+    'METHYLPHENID': 'methylphenidate',
+    'METHYLPHEN': 'methylphenidate',
+    'LISDEXAMFET': 'Vyvanse',
+    'LISDEX': 'Vyvanse',
+    'HYDROCHLOROT': 'hydrochlorothiazide',
+    'HCTZ': 'hydrochlorothiazide',
+    'ATORVAST': 'atorvastatin',
+    'LEVOTHYROX': 'levothyroxine',
+    'METOPROL': 'metoprolol',
+    'ROSUVAST': 'rosuvastatin',
+    'ESCITALOP': 'escitalopram',
+    'SERTRAL': 'sertraline',
+    'GABAPENT': 'gabapentin',
+    'OMEPRAZ': 'omeprazole',
+    'PANTOPRAZ': 'pantoprazole',
+    'MONTELUK': 'montelukast',
+    'ALBUTER': 'albuterol',
+    'SEMAGLUT': 'Ozempic',
+    'TIRZEPAT': 'tirzepatide',
+    'APIXAB': 'Eliquis',
+    'RIVAROX': 'rivaroxaban',
+    'EMPAGLIF': 'Jardiance',
+    'LISINOP': 'lisinopril',
+    'AMLODIP': 'amlodipine',
+    'METFORM': 'metformin',
+    'WARFAR': 'warfarin',
+  };
+
+  static String? _matchPharmacyAbbreviation(String normalizedUpper) {
+    // Check extended-release amphetamine/dextroamphetamine specifically
+    if ((normalizedUpper.contains('AMPHET/DEXTR') ||
+            normalizedUpper.contains('AMPHET-DEXTR') ||
+            normalizedUpper.contains('AMPHET DEXTR') ||
+            normalizedUpper.contains('AMPHETAMINE SALTS')) &&
+        RegExp(r'\b(XR|ER|EXT|EXTENDED)\b').hasMatch(normalizedUpper)) {
+      return 'Adderall XR';
+    }
+    for (final entry in _pharmacyAbbreviations.entries) {
+      if (normalizedUpper.contains(entry.key)) {
+        // If this is a single-word truncation prefix and the full drug name is already
+        // spelled out on the label (e.g., "WARFARIN SODIUM"), let the normal dosage
+        // parser preserve the full label wording.
+        if (!entry.key.contains('/') &&
+            !entry.key.contains('-') &&
+            !entry.key.contains(' ') &&
+            normalizedUpper.contains(entry.value.toUpperCase())) {
+          continue;
+        }
+        return entry.value;
+      }
+    }
+    return null;
+  }
 
   static const Set<String> _ignoredWords = {
     'TAKE', 'ONE', 'TWO', 'THREE', 'TABLET', 'TABLETS', 'CAPSULE', 'CAPSULES',
@@ -73,6 +147,27 @@ class BottleLabelParser {
 
     final normalizedUpper = rawOcrText.toUpperCase();
     final detectedStrength = extractStrength(rawOcrText);
+
+    // 0. Expand shortened U.S. pharmacy bottle abbreviations (e.g., AMPHET/DEXTR -> Adderall)
+    final expandedAbbrev = _matchPharmacyAbbreviation(normalizedUpper);
+    if (expandedAbbrev != null) {
+      final expandedUpper = expandedAbbrev.toUpperCase();
+      for (final drug in knownCatalog) {
+        final b = drug.brandName?.trim().toUpperCase() ?? '';
+        final g = drug.genericName.trim().toUpperCase();
+        if (b == expandedUpper || g == expandedUpper || g.contains(expandedUpper) || b.contains(expandedUpper)) {
+          return BottleScanParseResult(
+            matchedCatalogDrug: drug,
+            queryTerm: drug.displayName,
+            detectedStrength: detectedStrength,
+          );
+        }
+      }
+      return BottleScanParseResult(
+        queryTerm: expandedAbbrev,
+        detectedStrength: detectedStrength,
+      );
+    }
 
     // 1. Highest-precision match: check against known canonical catalog drugs first
     for (final drug in knownCatalog) {

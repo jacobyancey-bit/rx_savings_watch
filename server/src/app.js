@@ -92,8 +92,15 @@ function createApp(db, options = {}) {
   // Serve Flutter Web App at '/' if built into server/public
   const webPublicDir = path.join(__dirname, '..', 'public');
   if (fs.existsSync(webPublicDir)) {
-    app.use(express.static(webPublicDir));
+    app.use(express.static(webPublicDir, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html') || filePath.endsWith('rx_bottle_ocr.js') || filePath.endsWith('rx_push_bridge.js')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+      }
+    }));
     app.get('/', (req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.join(webPublicDir, 'index.html'));
     });
   }

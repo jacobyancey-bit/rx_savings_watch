@@ -56,13 +56,26 @@ function createCheckUpdatesRouter(db) {
       });
     }
 
-    // 3. Validate each item is a clean string/number
+    // 3. Strictly validate and deduplicate each rxcui (numeric 1-12 digits)
+    const uniqueRxcuis = [];
+    const seenRxcuis = new Set();
     for (const rxcui of rxcuis) {
       if (typeof rxcui !== 'string' && typeof rxcui !== 'number') {
         return res.status(400).json({
           error: 'Bad Request',
           message: 'Each rxcui must be a string or number.'
         });
+      }
+      const cleanRxcui = String(rxcui).trim();
+      if (!/^\d{1,12}$/.test(cleanRxcui)) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Each rxcui must be a numeric RxNorm concept identifier.'
+        });
+      }
+      if (!seenRxcuis.has(cleanRxcui)) {
+        seenRxcuis.add(cleanRxcui);
+        uniqueRxcuis.push(cleanRxcui);
       }
     }
 
@@ -82,8 +95,8 @@ function createCheckUpdatesRouter(db) {
     const results = [];
     let totalUpdatesFound = 0;
 
-    for (const rxcui of rxcuis) {
-      const drug = getDrugByRxcui.get(rxcui.toString());
+    for (const rxcui of uniqueRxcuis) {
+      const drug = getDrugByRxcui.get(rxcui);
       if (!drug) {
         continue;
       }

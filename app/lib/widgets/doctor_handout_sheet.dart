@@ -127,8 +127,12 @@ class DoctorHandoutSheet extends StatelessWidget {
                     children: [
                       Text(
                         isBiologic
-                            ? 'FDA Biosimilar / Interchangeability'
-                            : 'FDA Therapeutic Equivalence (TE): AB Rated',
+                            ? (drug.biosimilarStatus == 'interchangeable'
+                                ? 'FDA Interchangeable Biosimilar'
+                                : 'FDA Biosimilar Status')
+                            : (drug.teCode != null
+                                ? 'FDA Therapeutic Equivalence (TE): ${drug.teCode} Rated'
+                                : 'FDA Generic Substitution Status'),
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
@@ -137,10 +141,8 @@ class DoctorHandoutSheet extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        isBiologic
-                            ? 'This biologic has FDA-licensed biosimilar alternatives with reference product equivalence.'
-                            : 'FDA Orange Book AB rating indicates bioequivalence and therapeutic interchangeability under state generic substitution statutes.',
-                        style: TextStyle(fontSize: 11.5, color: Colors.blue.shade900, height: 1.3),
+                        drug.substitutionPlainGuidance,
+                        style: TextStyle(fontSize: 12, color: Colors.blue.shade900, height: 1.35),
                       ),
                     ],
                   ),

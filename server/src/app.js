@@ -20,17 +20,30 @@ const { IngestionScheduler } = require('./scheduler');
  */
 function createApp(db, options = {}) {
   const app = express();
+  app.disable('x-powered-by');
+  app.set('trust proxy', 1); // Accurate client IP behind Railway / reverse proxies
+
   const scheduler = options.scheduler || new IngestionScheduler(db);
   const enableRateLimiter = options.enableRateLimiter !== false;
 
   // 1. Security Headers via Helmet
   app.use(helmet({
-    contentSecurityPolicy: false, // API server does not render inline HTML
+    contentSecurityPolicy: false, // Flutter Web uses CanvasKit WASM + inline bootstrap
     crossOriginEmbedderPolicy: false
   }));
 
-  // 2. CORS: Explicit headers
-  app.use(cors());
+  // 2. CORS: Explicit allowlist for browser origins; native mobile apps send no Origin
+  const allowedOrigins = new Set(config.CORS_ALLOWED_ORIGINS);
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.has(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key']
+  }));
 
   // 3. Rate Limiting: Abuse and denial-of-service prevention
   if (enableRateLimiter) {
@@ -68,6 +81,11 @@ function createApp(db, options = {}) {
   app.use('/api', createCheckUpdatesRouter(db));
   app.use('/api', createDrugsRouter(db));
   app.use('/api', createSchedulerRouter(scheduler));
+
+  // Catch-all 404 for unknown /api/* routes (prevents info leakage)
+  app.use('/api', (req, res) => {
+    res.status(404).json({ error: 'Not Found' });
+  });
 
   // Serve Flutter Web App at '/' if built into server/public
   const webPublicDir = path.join(__dirname, '..', 'public');

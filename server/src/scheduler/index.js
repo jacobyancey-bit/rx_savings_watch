@@ -19,6 +19,7 @@ class IngestionScheduler {
     
     this.timers = [];
     this.isRunning = false;
+    this.isCycleRunning = false;
     this.lastSyncTimes = {
       shortages: null,
       nadac: null,
@@ -32,24 +33,32 @@ class IngestionScheduler {
    * @returns {Promise<{ ingestion: object, detection: Array<object> }>}
    */
   async runFullCycle(ingestionOptions = {}) {
-    console.log(`[Scheduler ${new Date().toISOString()}] Starting full ingestion cycle...`);
-    
-    // 1. Ingest all feeds
-    const ingestionResults = await runAllIngestions(this.db, ingestionOptions);
-    this.lastSyncTimes.full = new Date().toISOString();
+    if (this.isCycleRunning) {
+      return { skipped: true, reason: 'Ingestion cycle already in progress' };
+    }
+    this.isCycleRunning = true;
+    try {
+      console.log(`[Scheduler ${new Date().toISOString()}] Starting full ingestion cycle...`);
+      
+      // 1. Ingest all feeds
+      const ingestionResults = await runAllIngestions(this.db, ingestionOptions);
+      this.lastSyncTimes.full = new Date().toISOString();
 
-    // 2. Post-ingestion: Run 2-signal generic launch detector across all drugs
-    console.log(`[Scheduler ${new Date().toISOString()}] Ingestion complete. Running 2-signal launch detector...`);
-    const detectionResults = this.detector.runAll({ persistAlert: true });
+      // 2. Post-ingestion: Run 2-signal generic launch detector across all drugs
+      console.log(`[Scheduler ${new Date().toISOString()}] Ingestion complete. Running 2-signal launch detector...`);
+      const detectionResults = this.detector.runAll({ persistAlert: true });
 
-    const newLaunches = detectionResults.filter(r => r.launch_detected && r.alert_created);
-    console.log(`[Scheduler ${new Date().toISOString()}] Cycle finished. ${newLaunches.length} new commercial generic launch alerts created.`);
+      const newLaunches = detectionResults.filter(r => r.launch_detected && r.alert_created);
+      console.log(`[Scheduler ${new Date().toISOString()}] Cycle finished. ${newLaunches.length} new commercial generic launch alerts created.`);
 
-    return {
-      ingestion: ingestionResults,
-      detection: detectionResults,
-      new_launches_count: newLaunches.length
-    };
+      return {
+        ingestion: ingestionResults,
+        detection: detectionResults,
+        new_launches_count: newLaunches.length
+      };
+    } finally {
+      this.isCycleRunning = false;
+    }
   }
 
   /**

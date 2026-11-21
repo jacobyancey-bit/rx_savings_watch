@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// Persistent, high-visibility privacy trust indicator designed for older adults
@@ -49,7 +50,9 @@ class PrivacyTrustBanner extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Your medicine list stays only on this phone.',
+                          kIsWeb
+                              ? 'Your medicine list stays only in this browser — not synced to other devices.'
+                              : 'Your medicine list stays only on this phone — not synced to other devices.',
                           style: TextStyle(
                             fontSize: 13,
                             color: textColor,
@@ -143,9 +146,11 @@ class PrivacyPromiseSheet extends StatelessWidget {
               ),
               _buildPromiseRow(
                 context,
-                icon: Icons.phone_android_outlined,
-                title: 'Stored Only on Your Phone',
-                description: 'Your medication list is saved privately on this device—never uploaded to a cloud profile.',
+                icon: kIsWeb ? Icons.laptop_outlined : Icons.phone_android_outlined,
+                title: kIsWeb ? 'Stored Only in This Browser' : 'Stored Only on Your Phone',
+                description: kIsWeb
+                    ? 'Your medication list stays saved in this browser even after you close the page. Because there is no cloud account, it will not appear on other devices, and clearing browser site data or using Private/Incognito mode will clear it.'
+                    : 'Your medication list is saved privately on this device—never uploaded to a cloud profile. Because there is no account, it will not automatically sync to other devices, and uninstalling the app removes it.',
               ),
               _buildPromiseRow(
                 context,

@@ -103,10 +103,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Your medication cabinet is stored strictly on this device. '
-                  'When checking for generic updates, the app sends only anonymized drug concept IDs (RXCUIs). '
-                  'No names, emails, IP addresses, or personal health identifiers are ever tracked, logged, or tied to your identity.',
-                  style: TextStyle(fontSize: 12.5, color: Colors.teal.shade900, height: 1.4),
+                  'Your medication cabinet is stored strictly on this device (or in this browser on the web). '
+                  'When checking for generic updates, the app sends only anonymized drug concept IDs (RXCUIs) mixed with decoy lookups. '
+                  'No names, emails, IP addresses, or personal health identifiers are ever tracked or stored.\n\n'
+                  'Privacy Trade-Off: Because there is no account or cloud backup, your list stays saved when you close the app or browser, '
+                  'but it will not sync between different devices, and uninstalling the app or clearing browser site data will erase it.',
+                  style: TextStyle(fontSize: 13, color: Colors.teal.shade900, height: 1.45),
                 ),
               ],
             ),

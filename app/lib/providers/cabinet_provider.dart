@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/drug.dart';
+import '../models/medication_reminder.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
@@ -13,6 +14,7 @@ class CabinetProvider extends ChangeNotifier {
   final Completer<void> _initCompleter = Completer<void>();
 
   List<Drug> _cabinet = [];
+  Map<String, MedicationReminder> _reminders = {};
   bool _isLoading = true;
   bool _isSyncing = false;
   String? _lastChecked;
@@ -33,6 +35,8 @@ class CabinetProvider extends ChangeNotifier {
   }
 
   List<Drug> get cabinet => List.unmodifiable(_cabinet);
+  Map<String, MedicationReminder> get reminders => Map.unmodifiable(_reminders);
+  MedicationReminder? reminderFor(String rxcui) => _reminders[rxcui];
   bool get isLoading => _isLoading;
   bool get isSyncing => _isSyncing;
   String? get lastChecked => _lastChecked;
@@ -82,6 +86,7 @@ class CabinetProvider extends ChangeNotifier {
     _textScale = await _storageService.getTextScale();
 
     _cabinet = await _storageService.loadCabinet();
+    _reminders = await _storageService.loadReminders();
     _lastChecked = await _storageService.getLastCheckedTimestamp();
     await WebPushService.syncWatchedRxcuis(_cabinet.map((d) => d.rxcui).toList());
     _isLoading = false;
@@ -131,7 +136,11 @@ class CabinetProvider extends ChangeNotifier {
   }
 
   Future<void> clearAllData() async {
+    for (final rxcui in _reminders.keys) {
+      await _notificationService.cancelMedicationReminders(rxcui);
+    }
     _cabinet = [];
+    _reminders = {};
     _lastChecked = null;
     _syncError = null;
     _lastNewAlertsCount = 0;
@@ -154,8 +163,37 @@ class CabinetProvider extends ChangeNotifier {
 
   Future<void> removeDrug(String rxcui) async {
     _cabinet.removeWhere((d) => d.rxcui == rxcui);
+    if (_reminders.remove(rxcui) != null) {
+      await _storageService.saveReminders(_reminders);
+      await _notificationService.cancelMedicationReminders(rxcui);
+    }
     await _storageService.saveCabinet(_cabinet);
     await WebPushService.syncWatchedRxcuis(_cabinet.map((d) => d.rxcui).toList());
+    notifyListeners();
+  }
+
+  Future<void> saveReminder(MedicationReminder reminder) async {
+    _reminders[reminder.rxcui] = reminder;
+    await _storageService.saveReminders(_reminders);
+    await _notificationService.scheduleDailyMedicationReminder(reminder);
+    notifyListeners();
+  }
+
+  Future<void> deleteReminder(String rxcui) async {
+    _reminders.remove(rxcui);
+    await _storageService.saveReminders(_reminders);
+    await _notificationService.cancelMedicationReminders(rxcui);
+    notifyListeners();
+  }
+
+  Future<void> toggleTakenToday(String rxcui) async {
+    final existing = _reminders[rxcui];
+    if (existing == null) return;
+    final updated = existing.isTakenToday()
+        ? existing.copyWith(clearTakenDate: true)
+        : existing.copyWith(takenDate: MedicationReminder.todayKey());
+    _reminders[rxcui] = updated;
+    await _storageService.saveReminders(_reminders);
     notifyListeners();
   }
 

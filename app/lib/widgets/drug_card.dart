@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/drug.dart';
+import '../models/medication_reminder.dart';
 import 'signal_badges.dart';
 import 'savings_badge.dart';
 
@@ -7,12 +8,18 @@ class DrugCard extends StatelessWidget {
   final Drug drug;
   final VoidCallback onTap;
   final VoidCallback onRemove;
+  final MedicationReminder? reminder;
+  final VoidCallback? onReminderTap;
+  final VoidCallback? onToggleTaken;
 
   const DrugCard({
     super.key,
     required this.drug,
     required this.onTap,
     required this.onRemove,
+    this.reminder,
+    this.onReminderTap,
+    this.onToggleTaken,
   });
 
   @override
@@ -150,6 +157,12 @@ class DrugCard extends StatelessWidget {
                   const SizedBox(height: 10),
                 ],
 
+                // Daily Medication Reminder & Taken Today strip
+                if (onReminderTap != null) ...[
+                  _buildReminderRow(context, theme),
+                  const SizedBox(height: 10),
+                ],
+
                 // Signal badges row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -173,6 +186,146 @@ class DrugCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildReminderRow(BuildContext context, ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    final r = reminder;
+
+    if (r == null) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: InkWell(
+          onTap: onReminderTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
+                  : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.notifications_none_rounded,
+                  size: 16,
+                  color: isDark ? Colors.teal.shade200 : Colors.teal.shade700,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Set Daily Reminder',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.teal.shade200 : Colors.teal.shade800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final taken = r.isTakenToday();
+    final activeColor = r.enabled
+        ? (isDark ? Colors.teal.shade200 : Colors.teal.shade800)
+        : Colors.grey.shade600;
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        InkWell(
+          onTap: onReminderTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: r.enabled
+                  ? (isDark ? Colors.teal.withValues(alpha: 0.18) : Colors.teal.shade50)
+                  : (isDark ? Colors.grey.shade800 : Colors.grey.shade100),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: r.enabled
+                    ? (isDark ? Colors.teal.shade400 : Colors.teal.shade300)
+                    : Colors.grey.shade400,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  r.enabled
+                      ? Icons.notifications_active_outlined
+                      : Icons.notifications_off_outlined,
+                  size: 15,
+                  color: activeColor,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  r.enabled ? r.formattedTimesSummary : 'Paused • ${r.formattedTimesSummary}',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: activeColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (onToggleTaken != null)
+          InkWell(
+            onTap: onToggleTaken,
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: taken
+                    ? (isDark ? Colors.green.withValues(alpha: 0.22) : Colors.green.shade50)
+                    : (isDark ? Colors.grey.shade800 : Colors.grey.shade100),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: taken
+                      ? (isDark ? Colors.green.shade400 : Colors.green.shade400)
+                      : Colors.grey.shade400,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    taken ? Icons.check_circle : Icons.radio_button_unchecked,
+                    size: 15,
+                    color: taken
+                        ? (isDark ? Colors.green.shade300 : Colors.green.shade700)
+                        : Colors.grey.shade600,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    taken ? 'Taken Today' : 'Mark Taken',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: taken
+                          ? (isDark ? Colors.green.shade200 : Colors.green.shade800)
+                          : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

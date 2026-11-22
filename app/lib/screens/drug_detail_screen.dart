@@ -5,6 +5,7 @@ import '../models/drug.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
 import '../widgets/doctor_handout_sheet.dart';
+import '../widgets/reminder_sheet.dart';
 import '../widgets/signal_badges.dart';
 
 class DrugDetailScreen extends StatefulWidget {
@@ -157,6 +158,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     final cabinet = context.watch<CabinetProvider>();
     final drug = _drug;
     final isWatched = cabinet.isWatched(drug.rxcui);
+    final reminder = cabinet.reminderFor(drug.rxcui);
     final p = drug.pricing;
 
     final annualSavings = (_monthlyBrandCopay > _monthlyGenericCopay)
@@ -272,6 +274,24 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                         ),
                         icon: const Icon(Icons.badge_outlined, size: 16),
                         label: const Text('Show Doctor / Pharmacist Card'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => ReminderSheet.show(
+                          context,
+                          drug,
+                          dosage: _selectedStrength,
+                        ),
+                        icon: Icon(
+                          reminder != null && reminder.enabled
+                              ? Icons.notifications_active_outlined
+                              : Icons.notifications_none_rounded,
+                          size: 17,
+                        ),
+                        label: Text(
+                          reminder != null
+                              ? 'Reminder: ${reminder.formattedTimesSummary}'
+                              : 'Set Daily Reminder',
+                        ),
                       ),
                       FilledButton.tonalIcon(
                         onPressed: () async {

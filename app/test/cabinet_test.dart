@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rx_savings_watch/models/drug.dart';
+import 'package:rx_savings_watch/models/medication_reminder.dart';
 import 'package:rx_savings_watch/providers/cabinet_provider.dart';
 import 'package:rx_savings_watch/services/api_service.dart';
 import 'package:rx_savings_watch/services/notification_service.dart';
@@ -7,6 +8,7 @@ import 'package:rx_savings_watch/services/storage_service.dart';
 
 class MockStorageService extends StorageService {
   List<Drug> storedCabinet = [];
+  Map<String, MedicationReminder> storedReminders = {};
   String? storedLastChecked;
   String? storedUrl;
   bool allowLaunch = true;
@@ -62,8 +64,17 @@ class MockStorageService extends StorageService {
   }
 
   @override
+  Future<Map<String, MedicationReminder>> loadReminders() async => Map.from(storedReminders);
+
+  @override
+  Future<void> saveReminders(Map<String, MedicationReminder> reminders) async {
+    storedReminders = Map.from(reminders);
+  }
+
+  @override
   Future<void> clearAllLocalData() async {
     storedCabinet = [];
+    storedReminders = {};
     storedLastChecked = null;
   }
 }
@@ -122,6 +133,12 @@ class MockNotificationService extends NotificationService {
   }) async {
     shortageNotified = true;
   }
+
+  @override
+  Future<void> scheduleDailyMedicationReminder(MedicationReminder reminder) async {}
+
+  @override
+  Future<void> cancelMedicationReminders(String rxcui) async {}
 }
 
 void main() {

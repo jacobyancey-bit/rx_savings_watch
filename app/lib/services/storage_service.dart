@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/drug.dart';
+import '../models/medication_reminder.dart';
 
 class StorageService {
   static const String _cabinetKey = 'rx_savings_cabinet_drugs_v1';
+  static const String _remindersKey = 'rx_savings_reminders_v1';
   static const String _lastCheckedKey = 'rx_savings_last_checked_timestamp';
   static const String _serverUrlKey = 'rx_savings_custom_server_url';
   static const String _allowLaunchNotifsKey = 'rx_savings_allow_launch_notifs';
@@ -81,9 +83,38 @@ class StorageService {
     await prefs.setDouble(_textScaleKey, scale);
   }
 
+  Future<Map<String, MedicationReminder>> loadReminders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_remindersKey);
+    if (jsonString == null || jsonString.isEmpty) {
+      return {};
+    }
+    try {
+      final Map<String, dynamic> decoded = jsonDecode(jsonString) as Map<String, dynamic>;
+      final result = <String, MedicationReminder>{};
+      for (final entry in decoded.entries) {
+        if (entry.value is Map) {
+          result[entry.key] = MedicationReminder.fromJson(
+            Map<String, dynamic>.from(entry.value as Map),
+          );
+        }
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> saveReminders(Map<String, MedicationReminder> reminders) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = reminders.map((k, v) => MapEntry(k, v.toJson()));
+    await prefs.setString(_remindersKey, jsonEncode(encoded));
+  }
+
   Future<void> clearAllLocalData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_cabinetKey);
+    await prefs.remove(_remindersKey);
     await prefs.remove(_lastCheckedKey);
   }
 }

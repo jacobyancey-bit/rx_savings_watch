@@ -7,6 +7,7 @@ import '../services/web_push_service.dart';
 import '../widgets/drug_card.dart';
 import '../widgets/home_footer_section.dart';
 import '../widgets/privacy_promise_sheet.dart';
+import '../widgets/reminder_sheet.dart';
 import '../widgets/transfer_cabinet_sheet.dart';
 import 'drug_detail_screen.dart';
 import 'search_screen.dart';
@@ -269,6 +270,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           final drug = cabinet.cabinet[index];
                           return DrugCard(
                             drug: drug,
+                            reminder: cabinet.reminderFor(drug.rxcui),
+                            onReminderTap: () => ReminderSheet.show(context, drug),
+                            onToggleTaken: () => cabinet.toggleTakenToday(drug.rxcui),
                             onTap: () {
                               Navigator.of(context).push(
                                 MaterialPageRoute(

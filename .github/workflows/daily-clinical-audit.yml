@@ -1,0 +1,79 @@
+name: Daily Clinical Accuracy Audit (42-Drug Golden Checklist)
+
+on:
+  schedule:
+    # Runs every morning at 6:00 AM US Central Time (12:00 UTC)
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  clinical-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server dependencies
+        run: npm --prefix server ci
+
+      - name: Run server unit tests
+        run: npm --prefix server test
+
+      - name: Run 42-drug Golden Clinical Regression Suite
+        id: clinical
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm --prefix server run test:clinical 2>&1 | tee clinical-report.log
+
+      - name: Open GitHub Issue alert if any drug status changed or failed
+        if: steps.clinical.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.existsSync('clinical-report.log')
+              ? fs.readFileSync('clinical-report.log', 'utf8')
+              : 'No log captured.';
+            const failLines = log
+              .split('\n')
+              .filter(l => l.includes('[FAIL]') || l.includes('Clinical Regression Summary:'))
+              .join('\n');
+
+            const dateStr = new Date().toISOString().split('T')[0];
+            const title = `Clinical Audit Alert (${dateStr}): Prescription status changed or failed`;
+            const body = [
+              'The daily 42-drug Golden Clinical Regression Suite detected a change or failure against live FDA / RxNorm / CMS APIs.',
+              '',
+              '### Summary',
+              '```',
+              failLines || log.slice(-1500),
+              '```',
+              '',
+              `- **Workflow run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '- **Why this happens:** Either a brand-only medication genuinely launched a commercial generic (update `expectLaunch` in `server/scripts/clinical-regression.js`), or an upstream FDA/CMS API response format changed.',
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+            });
+
+      - name: Fail job when clinical regression failed (triggers GitHub email alert)
+        if: steps.clinical.outcome == 'failure'
+        run: exit 1

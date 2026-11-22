@@ -220,7 +220,7 @@ class DrugCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  'Set Daily Reminder',
+                  'Set Reminder',
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
@@ -272,7 +272,7 @@ class DrugCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 5),
                 Text(
-                  r.enabled ? r.formattedTimesSummary : 'Paused • ${r.formattedTimesSummary}',
+                  r.enabled ? r.scheduleSummary : 'Paused • ${r.scheduleSummary}',
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,

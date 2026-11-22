@@ -5,7 +5,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../models/medication_reminder.dart';
 
 class NotificationService {
-  static const int _maxSlotsPerDrug = 8;
+  static const int _maxSlotsPerDrug = 32;
   final FlutterLocalNotificationsPlugin _plugin;
   bool _isInitialized = false;
   bool _tzInitialized = false;
@@ -40,8 +40,8 @@ class NotificationService {
     String cabinetId = 'default',
   }) {
     final key = cabinetId == 'default' ? rxcui : '$cabinetId::$rxcui';
-    final base = (key.hashCode & 0x0FFFFFFF) % 1000000;
-    return 100000 + base * 10 + (slotIndex % _maxSlotsPerDrug);
+    final base = (key.hashCode & 0x00FFFFFF) % 500000;
+    return 100000 + base * 40 + (slotIndex % _maxSlotsPerDrug);
   }
 
   Future<void> initialize() async {
@@ -192,28 +192,62 @@ class NotificationService {
     );
 
     final now = tz.TZDateTime.now(tz.local);
-    final slots = reminder.times.take(_maxSlotsPerDrug).toList();
+    int slotIndex = 0;
 
-    for (var i = 0; i < slots.length; i++) {
-      final t = slots[i];
-      var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, t.hour, t.minute);
-      if (scheduled.isBefore(now)) {
-        scheduled = scheduled.add(const Duration(days: 1));
-      }
-
+    Future<void> scheduleSlot(tz.TZDateTime when, DateTimeComponents matchMode) async {
+      if (slotIndex >= _maxSlotsPerDrug) return;
+      final id = _reminderNotificationId(reminder.rxcui, slotIndex++, cabinetId: cabinetId);
       try {
         await _plugin.zonedSchedule(
-          id: _reminderNotificationId(reminder.rxcui, i, cabinetId: cabinetId),
+          id: id,
           title: reminder.notificationTitle,
           body: reminder.notificationBody,
-          scheduledDate: scheduled,
+          scheduledDate: when,
           notificationDetails: details,
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-          matchDateTimeComponents: DateTimeComponents.time,
+          matchDateTimeComponents: matchMode,
         );
       } catch (e) {
-        debugPrint('[NotificationService] Error scheduling reminder slot $i: $e');
+        debugPrint('[NotificationService] Error scheduling reminder slot $slotIndex: $e');
       }
+    }
+
+    switch (reminder.frequency) {
+      case ReminderFrequency.daily:
+        for (final t in reminder.times) {
+          var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, t.hour, t.minute);
+          if (scheduled.isBefore(now)) {
+            scheduled = scheduled.add(const Duration(days: 1));
+          }
+          await scheduleSlot(scheduled, DateTimeComponents.time);
+        }
+        break;
+      case ReminderFrequency.specificDays:
+        for (final weekday in reminder.normalizedWeekdays) {
+          for (final t in reminder.times) {
+            var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, t.hour, t.minute);
+            var daysAhead = (weekday - scheduled.weekday) % 7;
+            if (daysAhead < 0) daysAhead += 7;
+            scheduled = scheduled.add(Duration(days: daysAhead));
+            if (scheduled.isBefore(now)) {
+              scheduled = scheduled.add(const Duration(days: 7));
+            }
+            await scheduleSlot(scheduled, DateTimeComponents.dayOfWeekAndTime);
+          }
+        }
+        break;
+      case ReminderFrequency.monthly:
+        final dom = reminder.dayOfMonth.clamp(1, 28);
+        for (final t in reminder.times) {
+          var scheduled = tz.TZDateTime(tz.local, now.year, now.month, dom, t.hour, t.minute);
+          if (scheduled.isBefore(now)) {
+            final nextMonth = now.month == 12 ? 1 : now.month + 1;
+            final nextYear = now.month == 12 ? now.year + 1 : now.year;
+            scheduled = tz.TZDateTime(tz.local, nextYear, nextMonth, dom, t.hour, t.minute);
+          }
+          await scheduleSlot(scheduled, DateTimeComponents.dayOfMonthAndTime);
+        }
+        break;
     }
   }
 

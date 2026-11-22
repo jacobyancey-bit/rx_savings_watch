@@ -55,5 +55,38 @@ void main() {
       expect(ics.contains('RRULE:FREQ=DAILY'), isTrue);
       expect(ics.contains('SUMMARY:Take Eliquis (5 mg)'), isTrue);
     });
+
+    test('supports specificDays and monthly frequencies in summary and ICS', () {
+      final weekly = MedicationReminder(
+        rxcui: '1991302',
+        drugName: 'Ozempic',
+        frequency: ReminderFrequency.specificDays,
+        weekdays: const [DateTime.sunday],
+        times: const [ReminderTime(hour: 9, minute: 0)],
+      );
+      expect(weekly.scheduleSummary, 'Sun • 9:00 AM');
+      final weeklyIcs = weekly.buildIcsContent(DateTime(2026, 11, 22, 8, 0));
+      expect(weeklyIcs, contains('RRULE:FREQ=WEEKLY;BYDAY=SU'));
+
+      final mwf = MedicationReminder(
+        rxcui: '12345',
+        drugName: 'Methotrexate',
+        frequency: ReminderFrequency.specificDays,
+        weekdays: const [DateTime.monday, DateTime.wednesday, DateTime.friday],
+        times: const [ReminderTime(hour: 8, minute: 0)],
+      );
+      expect(mwf.scheduleSummary, 'Mon, Wed, Fri • 8:00 AM');
+      expect(mwf.buildIcsContent(DateTime(2026, 11, 22, 8, 0)), contains('RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR'));
+
+      final monthly = MedicationReminder(
+        rxcui: '99999',
+        drugName: 'Boniva',
+        frequency: ReminderFrequency.monthly,
+        dayOfMonth: 1,
+        times: const [ReminderTime(hour: 7, minute: 30)],
+      );
+      expect(monthly.scheduleSummary, 'Monthly (1st) • 7:30 AM');
+      expect(monthly.buildIcsContent(DateTime(2026, 11, 22, 8, 0)), contains('RRULE:FREQ=MONTHLY;BYMONTHDAY=1'));
+    });
   });
 }

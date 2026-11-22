@@ -289,8 +289,8 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                         ),
                         label: Text(
                           reminder != null
-                              ? 'Reminder: ${reminder.formattedTimesSummary}'
-                              : 'Set Daily Reminder',
+                              ? 'Reminder: ${reminder.scheduleSummary}'
+                              : 'Set Reminder',
                         ),
                       ),
                       FilledButton.tonalIcon(

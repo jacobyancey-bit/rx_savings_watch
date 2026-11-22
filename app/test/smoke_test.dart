@@ -141,12 +141,15 @@ void main() {
       // 1. Default cabinet renders cleanly with zero caregiver clutter
       expect(find.text('My Medication Cabinet (1)'), findsOneWidget);
       expect(find.text('Vyvanse'), findsOneWidget);
-      expect(find.text('Set Daily Reminder'), findsOneWidget);
+      expect(find.text('Set Reminder'), findsOneWidget);
 
       // 2. Open ReminderSheet from DrugCard and save default Morning (8:00 AM) reminder
-      await tester.tap(find.text('Set Daily Reminder'));
+      await tester.tap(find.text('Set Reminder'));
       await tester.pumpAndSettle();
-      expect(find.text('Daily Reminder'), findsOneWidget);
+      expect(find.text('Medication Reminder'), findsOneWidget);
+      expect(find.text('Every Day'), findsOneWidget);
+      expect(find.text('Specific Days'), findsOneWidget);
+      expect(find.text('Monthly'), findsOneWidget);
       expect(find.textContaining('Morning'), findsOneWidget);
       expect(find.text('Hide drug name on lock screen'), findsOneWidget);
 
@@ -190,7 +193,9 @@ void main() {
       expect(find.text("Mom's Cabinet (1)"), findsOneWidget);
       expect(find.text('Eliquis'), findsOneWidget);
 
-      await tester.tap(find.text('Set Daily Reminder'));
+      await tester.tap(find.text('Set Reminder'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Specific Days'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save Reminder'));
       await tester.pumpAndSettle();

@@ -44,7 +44,20 @@ class _ReminderSheetState extends State<ReminderSheet> {
     ('Bedtime', ReminderTime(hour: 21, minute: 0)),
   ];
 
+  static const List<(String, int)> _weekdayOptions = [
+    ('Sun', DateTime.sunday),
+    ('Mon', DateTime.monday),
+    ('Tue', DateTime.tuesday),
+    ('Wed', DateTime.wednesday),
+    ('Thu', DateTime.thursday),
+    ('Fri', DateTime.friday),
+    ('Sat', DateTime.saturday),
+  ];
+
   late List<ReminderTime> _selectedTimes;
+  late ReminderFrequency _frequency;
+  late List<int> _weekdays;
+  late int _dayOfMonth;
   late bool _enabled;
   late bool _discreetLockScreen;
   bool _hasExisting = false;
@@ -57,13 +70,32 @@ class _ReminderSheetState extends State<ReminderSheet> {
     if (existing != null) {
       _hasExisting = true;
       _selectedTimes = List<ReminderTime>.from(existing.times);
+      _frequency = existing.frequency;
+      _weekdays = List<int>.from(existing.normalizedWeekdays);
+      _dayOfMonth = existing.dayOfMonth;
       _enabled = existing.enabled;
       _discreetLockScreen = existing.discreetLockScreen;
     } else {
       _selectedTimes = [const ReminderTime(hour: 8, minute: 0)];
+      _frequency = ReminderFrequency.daily;
+      _weekdays = [DateTime.now().weekday];
+      _dayOfMonth = DateTime.now().day.clamp(1, 28);
       _enabled = true;
       _discreetLockScreen = false;
     }
+  }
+
+  void _toggleWeekday(int weekday) {
+    setState(() {
+      if (_weekdays.contains(weekday)) {
+        if (_weekdays.length > 1) {
+          _weekdays.remove(weekday);
+        }
+      } else {
+        _weekdays.add(weekday);
+        _weekdays.sort();
+      }
+    });
   }
 
   void _toggleTime(ReminderTime time) {
@@ -100,6 +132,9 @@ class _ReminderSheetState extends State<ReminderSheet> {
       rxcui: widget.drug.rxcui,
       drugName: widget.drug.displayName,
       dosage: widget.dosage ?? existing?.dosage,
+      frequency: _frequency,
+      weekdays: List<int>.from(_weekdays),
+      dayOfMonth: _dayOfMonth,
       times: List<ReminderTime>.from(_selectedTimes),
       enabled: _enabled,
       discreetLockScreen: _discreetLockScreen,
@@ -125,7 +160,7 @@ class _ReminderSheetState extends State<ReminderSheet> {
       SnackBar(
         content: Text(
           _enabled
-              ? 'Daily reminder set for ${widget.drug.displayName} (${reminder.formattedTimesSummary})'
+              ? 'Reminder set for ${widget.drug.displayName} (${reminder.scheduleSummary})'
               : 'Reminder paused for ${widget.drug.displayName}',
         ),
         backgroundColor: Colors.teal.shade700,
@@ -138,7 +173,7 @@ class _ReminderSheetState extends State<ReminderSheet> {
     if (!mounted) return;
     Navigator.of(context).pop();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Removed daily reminder for ${widget.drug.displayName}')),
+      SnackBar(content: Text('Removed reminder for ${widget.drug.displayName}')),
     );
   }
 
@@ -192,7 +227,7 @@ class _ReminderSheetState extends State<ReminderSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Daily Reminder',
+                        'Medication Reminder',
                         style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       Text(
@@ -254,7 +289,78 @@ class _ReminderSheetState extends State<ReminderSheet> {
             const SizedBox(height: 16),
 
             Text(
-              'When do you take this medication?',
+              'How often do you take it?',
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<ReminderFrequency>(
+                segments: const [
+                  ButtonSegment(
+                    value: ReminderFrequency.daily,
+                    label: Text('Every Day'),
+                  ),
+                  ButtonSegment(
+                    value: ReminderFrequency.specificDays,
+                    label: Text('Specific Days'),
+                  ),
+                  ButtonSegment(
+                    value: ReminderFrequency.monthly,
+                    label: Text('Monthly'),
+                  ),
+                ],
+                selected: {_frequency},
+                onSelectionChanged: (sel) => setState(() => _frequency = sel.first),
+              ),
+            ),
+
+            if (_frequency == ReminderFrequency.specificDays) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final (label, dayNum) in _weekdayOptions)
+                    FilterChip(
+                      label: Text(label),
+                      selected: _weekdays.contains(dayNum),
+                      onSelected: (_) => _toggleWeekday(dayNum),
+                    ),
+                ],
+              ),
+            ],
+
+            if (_frequency == ReminderFrequency.monthly) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Text(
+                    'Day of every month:',
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(width: 12),
+                  DropdownButton<int>(
+                    value: _dayOfMonth,
+                    items: List.generate(
+                      28,
+                      (i) => DropdownMenuItem(
+                        value: i + 1,
+                        child: Text(MedicationReminder.ordinalDay(i + 1)),
+                      ),
+                    ),
+                    onChanged: (v) {
+                      if (v != null) setState(() => _dayOfMonth = v);
+                    },
+                  ),
+                ],
+              ),
+            ],
+
+            const SizedBox(height: 16),
+
+            Text(
+              'What time?',
               style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
@@ -291,7 +397,7 @@ class _ReminderSheetState extends State<ReminderSheet> {
               subtitle: Text(
                 _selectedTimes.isEmpty
                     ? 'Select at least one time above'
-                    : 'Repeats daily at ${_buildReminder().formattedTimesSummary}',
+                    : 'Schedule: ${_buildReminder().scheduleSummary}',
               ),
               value: _enabled,
               onChanged: (v) => setState(() => _enabled = v),
@@ -313,7 +419,7 @@ class _ReminderSheetState extends State<ReminderSheet> {
                 child: OutlinedButton.icon(
                   onPressed: _exportCalendarIcs,
                   icon: const Icon(Icons.calendar_month_outlined, size: 18),
-                  label: const Text('Add Daily Reminder to Phone Calendar (.ics)'),
+                  label: const Text('Add Reminder to Phone Calendar (.ics)'),
                 ),
               ),
             ],

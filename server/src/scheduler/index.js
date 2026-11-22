@@ -23,7 +23,7 @@ class IngestionScheduler {
     this.shortagesIntervalMs = options.shortagesIntervalMs || 24 * 60 * 60 * 1000;
     this.nadacIntervalMs = options.nadacIntervalMs || 7 * 24 * 60 * 60 * 1000;
     this.rollingAuditIntervalMs = options.rollingAuditIntervalMs || 6 * 60 * 60 * 1000;
-    this.rollingAuditBatchSize = options.rollingAuditBatchSize || 15;
+    this.rollingAuditBatchSize = options.rollingAuditBatchSize || 50;
     
     this.timers = [];
     this.isRunning = false;

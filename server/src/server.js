@@ -41,7 +41,7 @@ const server = app.listen(config.PORT, () => {
       // Kick off one gentle rolling audit 15s after boot so existing cached drugs
       // immediately benefit from updated FDA/CMS accuracy rules
       const bootAuditTimer = setTimeout(() => {
-        scheduler.runRollingLiveAudit({ batchSize: 15, delayMs: 500 })
+        scheduler.runRollingLiveAudit({ batchSize: 50, delayMs: 400 })
           .catch(err => console.error('[Boot] Rolling audit error:', err.message));
       }, 15000);
       bootAuditTimer.unref?.();

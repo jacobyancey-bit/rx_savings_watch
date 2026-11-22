@@ -34,6 +34,7 @@ class MedicationReminder {
   final String rxcui;
   final String drugName;
   final String? dosage;
+  final String? cabinetLabel;
   final List<ReminderTime> times;
   final bool enabled;
   final bool discreetLockScreen;
@@ -43,6 +44,7 @@ class MedicationReminder {
     required this.rxcui,
     required this.drugName,
     this.dosage,
+    this.cabinetLabel,
     required this.times,
     this.enabled = true,
     this.discreetLockScreen = false,
@@ -66,20 +68,30 @@ class MedicationReminder {
     return sorted.map((t) => t.format12Hour()).join(', ');
   }
 
-  String get notificationTitle =>
-      discreetLockScreen ? 'Medication Reminder' : 'Time for $drugName';
+  String get notificationTitle {
+    if (discreetLockScreen) return 'Medication Reminder';
+    final prefix = cabinetLabel != null && cabinetLabel!.trim().isNotEmpty
+        ? "${cabinetLabel!.trim()}'s "
+        : '';
+    return 'Time for $prefix$drugName';
+  }
 
   String get notificationBody {
     if (discreetLockScreen) {
       return 'Time to take your scheduled medication.';
     }
+    final prefix = cabinetLabel != null && cabinetLabel!.trim().isNotEmpty
+        ? "${cabinetLabel!.trim()}'s "
+        : '';
     final dosePart = dosage != null && dosage!.trim().isNotEmpty ? ' ($dosage)' : '';
-    return 'Scheduled reminder for $drugName$dosePart.';
+    return 'Scheduled reminder for $prefix$drugName$dosePart.';
   }
 
   MedicationReminder copyWith({
     String? drugName,
     String? dosage,
+    String? cabinetLabel,
+    bool clearCabinetLabel = false,
     List<ReminderTime>? times,
     bool? enabled,
     bool? discreetLockScreen,
@@ -90,6 +102,7 @@ class MedicationReminder {
       rxcui: rxcui,
       drugName: drugName ?? this.drugName,
       dosage: dosage ?? this.dosage,
+      cabinetLabel: clearCabinetLabel ? null : (cabinetLabel ?? this.cabinetLabel),
       times: times ?? this.times,
       enabled: enabled ?? this.enabled,
       discreetLockScreen: discreetLockScreen ?? this.discreetLockScreen,
@@ -120,9 +133,12 @@ class MedicationReminder {
           '${d.hour.toString().padLeft(2, '0')}'
           '${d.minute.toString().padLeft(2, '0')}00';
 
+      final prefix = cabinetLabel != null && cabinetLabel!.trim().isNotEmpty
+          ? "${cabinetLabel!.trim()}'s "
+          : '';
       final summary = discreetLockScreen
           ? 'Medication Reminder'
-          : 'Take $drugName${dosage != null && dosage!.isNotEmpty ? ' ($dosage)' : ''}';
+          : 'Take $prefix$drugName${dosage != null && dosage!.isNotEmpty ? ' ($dosage)' : ''}';
 
       buf
         ..writeln('BEGIN:VEVENT')
@@ -148,6 +164,7 @@ class MedicationReminder {
         'rxcui': rxcui,
         'drug_name': drugName,
         'dosage': dosage,
+        'cabinet_label': cabinetLabel,
         'times': times.map((t) => t.toJson()).toList(),
         'enabled': enabled,
         'discreet_lock_screen': discreetLockScreen,
@@ -163,6 +180,7 @@ class MedicationReminder {
       rxcui: json['rxcui']?.toString() ?? '',
       drugName: json['drug_name']?.toString() ?? 'Medication',
       dosage: json['dosage'] as String?,
+      cabinetLabel: json['cabinet_label'] as String?,
       times: rawTimes,
       enabled: json['enabled'] as bool? ?? true,
       discreetLockScreen: json['discreet_lock_screen'] as bool? ?? false,

@@ -34,8 +34,13 @@ class NotificationService {
     }
   }
 
-  int _reminderNotificationId(String rxcui, int slotIndex) {
-    final base = (rxcui.hashCode & 0x0FFFFFFF) % 1000000;
+  int _reminderNotificationId(
+    String rxcui,
+    int slotIndex, {
+    String cabinetId = 'default',
+  }) {
+    final key = cabinetId == 'default' ? rxcui : '$cabinetId::$rxcui';
+    final base = (key.hashCode & 0x0FFFFFFF) % 1000000;
     return 100000 + base * 10 + (slotIndex % _maxSlotsPerDrug);
   }
 
@@ -152,13 +157,16 @@ class NotificationService {
 
   /// Schedule daily repeating on-device alarms for a medication reminder.
   /// Uses AndroidScheduleMode.inexactAllowWhileIdle (Google Play compliant, zero special exact-alarm permission).
-  Future<void> scheduleDailyMedicationReminder(MedicationReminder reminder) async {
+  Future<void> scheduleDailyMedicationReminder(
+    MedicationReminder reminder, {
+    String cabinetId = 'default',
+  }) async {
     if (kIsWeb) return;
     await initialize();
     _ensureTimezone();
 
     // Always clear previous slots for this medication first
-    await cancelMedicationReminders(reminder.rxcui);
+    await cancelMedicationReminders(reminder.rxcui, cabinetId: cabinetId);
 
     if (!reminder.enabled || reminder.times.isEmpty) return;
 
@@ -195,7 +203,7 @@ class NotificationService {
 
       try {
         await _plugin.zonedSchedule(
-          id: _reminderNotificationId(reminder.rxcui, i),
+          id: _reminderNotificationId(reminder.rxcui, i, cabinetId: cabinetId),
           title: reminder.notificationTitle,
           body: reminder.notificationBody,
           scheduledDate: scheduled,
@@ -209,12 +217,15 @@ class NotificationService {
     }
   }
 
-  Future<void> cancelMedicationReminders(String rxcui) async {
+  Future<void> cancelMedicationReminders(
+    String rxcui, {
+    String cabinetId = 'default',
+  }) async {
     if (kIsWeb) return;
     await initialize();
     for (var i = 0; i < _maxSlotsPerDrug; i++) {
       try {
-        await _plugin.cancel(id: _reminderNotificationId(rxcui, i));
+        await _plugin.cancel(id: _reminderNotificationId(rxcui, i, cabinetId: cabinetId));
       } catch (_) {}
     }
   }

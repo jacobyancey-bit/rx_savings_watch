@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/drug.dart';
 import '../models/medication_reminder.dart';
+import '../models/patient_cabinet.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
@@ -13,8 +14,8 @@ class CabinetProvider extends ChangeNotifier {
   late ApiService _apiService;
   final Completer<void> _initCompleter = Completer<void>();
 
-  List<Drug> _cabinet = [];
-  Map<String, MedicationReminder> _reminders = {};
+  List<PatientCabinet> _cabinets = [PatientCabinet.emptyDefault()];
+  String _activeCabinetId = PatientCabinet.defaultId;
   bool _isLoading = true;
   bool _isSyncing = false;
   String? _lastChecked;
@@ -34,9 +35,20 @@ class CabinetProvider extends ChangeNotifier {
     _init();
   }
 
-  List<Drug> get cabinet => List.unmodifiable(_cabinet);
-  Map<String, MedicationReminder> get reminders => Map.unmodifiable(_reminders);
-  MedicationReminder? reminderFor(String rxcui) => _reminders[rxcui];
+  List<PatientCabinet> get cabinets => List.unmodifiable(_cabinets);
+
+  PatientCabinet get activeCabinet {
+    for (final c in _cabinets) {
+      if (c.id == _activeCabinetId) return c;
+    }
+    return _cabinets.first;
+  }
+
+  String get activeCabinetId => activeCabinet.id;
+  bool get hasMultipleCabinets => _cabinets.length > 1;
+  List<Drug> get cabinet => List.unmodifiable(activeCabinet.drugs);
+  Map<String, MedicationReminder> get reminders => Map.unmodifiable(activeCabinet.reminders);
+  MedicationReminder? reminderFor(String rxcui) => activeCabinet.reminders[rxcui];
   bool get isLoading => _isLoading;
   bool get isSyncing => _isSyncing;
   String? get lastChecked => _lastChecked;
@@ -54,14 +66,14 @@ class CabinetProvider extends ChangeNotifier {
   }
 
   int get genericLaunchedCount =>
-      _cabinet.where((d) => d.commercialGenericAvailable).length;
+      activeCabinet.drugs.where((d) => d.commercialGenericAvailable).length;
 
   int get shortageCount =>
-      _cabinet.where((d) => d.hasActiveShortage).length;
+      activeCabinet.drugs.where((d) => d.hasActiveShortage).length;
 
   double get maxSavingsAvailable {
     double maxPct = 0.0;
-    for (final d in _cabinet) {
+    for (final d in activeCabinet.drugs) {
       final s = d.pricing?.estimatedSavingsPct;
       if (s != null && s > maxPct) {
         maxPct = s;
@@ -70,7 +82,30 @@ class CabinetProvider extends ChangeNotifier {
     return maxPct;
   }
 
-  bool isWatched(String rxcui) => _cabinet.any((d) => d.rxcui == rxcui);
+  bool isWatched(String rxcui) => activeCabinet.drugs.any((d) => d.rxcui == rxcui);
+
+  /// Deduplicated anonymous RxCUIs across all local cabinets (zero cabinet names sent).
+  List<String> _allWatchedRxcuis() {
+    final set = <String>{};
+    for (final c in _cabinets) {
+      for (final d in c.drugs) {
+        if (d.rxcui.isNotEmpty) set.add(d.rxcui);
+      }
+    }
+    return set.toList();
+  }
+
+  void _replaceCabinet(PatientCabinet updated) {
+    final idx = _cabinets.indexWhere((c) => c.id == updated.id);
+    if (idx >= 0) {
+      _cabinets[idx] = updated;
+    }
+  }
+
+  Future<void> _persistCabinets() async {
+    await _storageService.saveCabinets(_cabinets);
+    await WebPushService.syncWatchedRxcuis(_allWatchedRxcuis());
+  }
 
   Future<void> _init() async {
     _isLoading = true;
@@ -85,18 +120,23 @@ class CabinetProvider extends ChangeNotifier {
     _allowShortageNotifs = await _storageService.getAllowShortageNotifications();
     _textScale = await _storageService.getTextScale();
 
-    _cabinet = await _storageService.loadCabinet();
-    _reminders = await _storageService.loadReminders();
+    final loadedCabinets = await _storageService.loadCabinets();
+    _cabinets = loadedCabinets.isNotEmpty ? loadedCabinets : [PatientCabinet.emptyDefault()];
+    final savedActiveId = await _storageService.getActiveCabinetId();
+    _activeCabinetId = _cabinets.any((c) => c.id == savedActiveId)
+        ? savedActiveId
+        : _cabinets.first.id;
+
     _lastChecked = await _storageService.getLastCheckedTimestamp();
-    await WebPushService.syncWatchedRxcuis(_cabinet.map((d) => d.rxcui).toList());
+    await WebPushService.syncWatchedRxcuis(_allWatchedRxcuis());
     _isLoading = false;
     if (!_initCompleter.isCompleted) {
       _initCompleter.complete();
     }
     notifyListeners();
 
-    // Auto-sync cabinet if items exist
-    if (_cabinet.isNotEmpty) {
+    // Auto-sync active cabinet if items exist
+    if (activeCabinet.drugs.isNotEmpty) {
       await syncCabinet();
     }
   }
@@ -135,12 +175,111 @@ class CabinetProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> clearAllData() async {
-    for (final rxcui in _reminders.keys) {
-      await _notificationService.cancelMedicationReminders(rxcui);
+  Future<void> switchCabinet(String cabinetId) async {
+    if (!_cabinets.any((c) => c.id == cabinetId) || _activeCabinetId == cabinetId) return;
+    _activeCabinetId = cabinetId;
+    _syncError = null;
+    await _storageService.saveActiveCabinetId(cabinetId);
+    notifyListeners();
+  }
+
+  Future<PatientCabinet?> createCabinet({
+    required String name,
+    int? colorValue,
+  }) async {
+    if (_cabinets.length >= PatientCabinet.maxCabinets) return null;
+    final cleanName = PatientCabinet.sanitizeName(name, fallback: '');
+    if (cleanName.isEmpty) return null;
+
+    final id = 'cab_${DateTime.now().microsecondsSinceEpoch}';
+    final created = PatientCabinet(
+      id: id,
+      name: cleanName,
+      colorValue: PatientCabinet.sanitizeColor(colorValue),
+    );
+    _cabinets.add(created);
+    _activeCabinetId = created.id;
+    await _storageService.saveActiveCabinetId(created.id);
+    await _persistCabinets();
+    notifyListeners();
+    return created;
+  }
+
+  Future<void> renameCabinet(
+    String cabinetId, {
+    required String name,
+    int? colorValue,
+  }) async {
+    final idx = _cabinets.indexWhere((c) => c.id == cabinetId);
+    if (idx < 0) return;
+
+    final current = _cabinets[idx];
+    final cleanName = PatientCabinet.sanitizeName(name, fallback: current.name);
+    final updatedReminders = <String, MedicationReminder>{};
+    final newLabel = current.isDefault ? null : cleanName;
+
+    for (final entry in current.reminders.entries) {
+      final updatedRem = newLabel == null
+          ? entry.value.copyWith(clearCabinetLabel: true)
+          : entry.value.copyWith(cabinetLabel: newLabel);
+      updatedReminders[entry.key] = updatedRem;
+      if (updatedRem.enabled) {
+        await _notificationService.scheduleDailyMedicationReminder(
+          updatedRem,
+          cabinetId: current.id,
+        );
+      }
     }
-    _cabinet = [];
-    _reminders = {};
+
+    _cabinets[idx] = current.copyWith(
+      name: cleanName,
+      colorValue: colorValue,
+      reminders: updatedReminders,
+    );
+    await _persistCabinets();
+    notifyListeners();
+  }
+
+  Future<bool> deleteCabinet(String cabinetId) async {
+    if (_cabinets.length <= 1) return false;
+    final idx = _cabinets.indexWhere((c) => c.id == cabinetId);
+    if (idx < 0) return false;
+
+    final target = _cabinets[idx];
+    for (final rxcui in target.reminders.keys) {
+      await _notificationService.cancelMedicationReminders(rxcui, cabinetId: target.id);
+    }
+
+    _cabinets.removeAt(idx);
+    if (_activeCabinetId == cabinetId) {
+      _activeCabinetId = _cabinets.first.id;
+      await _storageService.saveActiveCabinetId(_activeCabinetId);
+    }
+    await _persistCabinets();
+    notifyListeners();
+    return true;
+  }
+
+  Future<void> clearActiveCabinet() async {
+    final current = activeCabinet;
+    for (final rxcui in current.reminders.keys) {
+      await _notificationService.cancelMedicationReminders(rxcui, cabinetId: current.id);
+    }
+    _replaceCabinet(current.copyWith(drugs: const [], reminders: const {}));
+    _syncError = null;
+    _lastNewAlertsCount = 0;
+    await _persistCabinets();
+    notifyListeners();
+  }
+
+  Future<void> clearAllData() async {
+    for (final cab in _cabinets) {
+      for (final rxcui in cab.reminders.keys) {
+        await _notificationService.cancelMedicationReminders(rxcui, cabinetId: cab.id);
+      }
+    }
+    _cabinets = [PatientCabinet.emptyDefault()];
+    _activeCabinetId = PatientCabinet.defaultId;
     _lastChecked = null;
     _syncError = null;
     _lastNewAlertsCount = 0;
@@ -152,9 +291,10 @@ class CabinetProvider extends ChangeNotifier {
   Future<void> addDrug(Drug drug) async {
     if (isWatched(drug.rxcui)) return;
 
-    _cabinet.add(drug);
-    await _storageService.saveCabinet(_cabinet);
-    await WebPushService.syncWatchedRxcuis(_cabinet.map((d) => d.rxcui).toList());
+    final current = activeCabinet;
+    final nextDrugs = List<Drug>.from(current.drugs)..add(drug);
+    _replaceCabinet(current.copyWith(drugs: nextDrugs));
+    await _persistCabinets();
     notifyListeners();
 
     // Trigger sync for this new drug
@@ -162,44 +302,59 @@ class CabinetProvider extends ChangeNotifier {
   }
 
   Future<void> removeDrug(String rxcui) async {
-    _cabinet.removeWhere((d) => d.rxcui == rxcui);
-    if (_reminders.remove(rxcui) != null) {
-      await _storageService.saveReminders(_reminders);
-      await _notificationService.cancelMedicationReminders(rxcui);
+    final current = activeCabinet;
+    final nextDrugs = current.drugs.where((d) => d.rxcui != rxcui).toList();
+    final nextReminders = Map<String, MedicationReminder>.from(current.reminders);
+    if (nextReminders.remove(rxcui) != null) {
+      await _notificationService.cancelMedicationReminders(rxcui, cabinetId: current.id);
     }
-    await _storageService.saveCabinet(_cabinet);
-    await WebPushService.syncWatchedRxcuis(_cabinet.map((d) => d.rxcui).toList());
+    _replaceCabinet(current.copyWith(drugs: nextDrugs, reminders: nextReminders));
+    await _persistCabinets();
     notifyListeners();
   }
 
   Future<void> saveReminder(MedicationReminder reminder) async {
-    _reminders[reminder.rxcui] = reminder;
-    await _storageService.saveReminders(_reminders);
-    await _notificationService.scheduleDailyMedicationReminder(reminder);
+    final current = activeCabinet;
+    final labeled = current.isDefault
+        ? reminder.copyWith(clearCabinetLabel: true)
+        : reminder.copyWith(cabinetLabel: current.name);
+    final nextReminders = Map<String, MedicationReminder>.from(current.reminders)
+      ..[labeled.rxcui] = labeled;
+    _replaceCabinet(current.copyWith(reminders: nextReminders));
+    await _storageService.saveCabinets(_cabinets);
+    await _notificationService.scheduleDailyMedicationReminder(
+      labeled,
+      cabinetId: current.id,
+    );
     notifyListeners();
   }
 
   Future<void> deleteReminder(String rxcui) async {
-    _reminders.remove(rxcui);
-    await _storageService.saveReminders(_reminders);
-    await _notificationService.cancelMedicationReminders(rxcui);
+    final current = activeCabinet;
+    final nextReminders = Map<String, MedicationReminder>.from(current.reminders)
+      ..remove(rxcui);
+    _replaceCabinet(current.copyWith(reminders: nextReminders));
+    await _storageService.saveCabinets(_cabinets);
+    await _notificationService.cancelMedicationReminders(rxcui, cabinetId: current.id);
     notifyListeners();
   }
 
   Future<void> toggleTakenToday(String rxcui) async {
-    final existing = _reminders[rxcui];
+    final current = activeCabinet;
+    final existing = current.reminders[rxcui];
     if (existing == null) return;
     final updated = existing.isTakenToday()
         ? existing.copyWith(clearTakenDate: true)
         : existing.copyWith(takenDate: MedicationReminder.todayKey());
-    _reminders[rxcui] = updated;
-    await _storageService.saveReminders(_reminders);
+    final nextReminders = Map<String, MedicationReminder>.from(current.reminders)
+      ..[rxcui] = updated;
+    _replaceCabinet(current.copyWith(reminders: nextReminders));
+    await _storageService.saveCabinets(_cabinets);
     notifyListeners();
   }
 
-  /// Import medications from another device by RxCUI list (zero-PII transfer).
-  /// Uses the anonymous, k-anonymity-chaffed check-updates endpoint to hydrate
-  /// each drug's canonical FDA/CMS status, then saves locally on this device.
+  /// Import medications from another device by RxCUI list (zero-PII transfer)
+  /// directly into the currently active cabinet.
   Future<int> importRxcuis(List<String> rxcuis) async {
     await _initCompleter.future;
     final newRxcuis = rxcuis
@@ -217,12 +372,15 @@ class CabinetProvider extends ChangeNotifier {
     final List returnedDrugs = response['drugs'] as List? ?? [];
     int addedCount = 0;
 
+    final current = activeCabinet;
+    final nextDrugs = List<Drug>.from(current.drugs);
+
     for (final item in returnedDrugs) {
       if (item is Map) {
         final map = Map<String, dynamic>.from(item);
         final drug = Drug.fromJson(map);
-        if (drug.rxcui.isNotEmpty && !isWatched(drug.rxcui)) {
-          _cabinet.add(drug);
+        if (drug.rxcui.isNotEmpty && !nextDrugs.any((d) => d.rxcui == drug.rxcui)) {
+          nextDrugs.add(drug);
           addedCount++;
         }
       }
@@ -231,25 +389,27 @@ class CabinetProvider extends ChangeNotifier {
     if (addedCount > 0) {
       final checkedAt = response['checked_at'] as String? ?? DateTime.now().toIso8601String();
       _lastChecked = checkedAt;
-      await _storageService.saveCabinet(_cabinet);
+      _replaceCabinet(current.copyWith(drugs: nextDrugs));
       await _storageService.saveLastCheckedTimestamp(checkedAt);
-      await WebPushService.syncWatchedRxcuis(_cabinet.map((d) => d.rxcui).toList());
+      await _persistCabinets();
       notifyListeners();
     }
 
     return addedCount;
   }
 
-  /// Sync cabinet medications anonymously with server
+  /// Sync active cabinet medications anonymously with server (only RxCUIs sent).
   Future<void> syncCabinet() async {
-    if (_cabinet.isEmpty || _isSyncing) return;
+    final targetId = activeCabinet.id;
+    final currentDrugs = List<Drug>.from(activeCabinet.drugs);
+    if (currentDrugs.isEmpty || _isSyncing) return;
 
     _isSyncing = true;
     _syncError = null;
     notifyListeners();
 
     try {
-      final rxcuis = _cabinet.map((d) => d.rxcui).toList();
+      final rxcuis = currentDrugs.map((d) => d.rxcui).toList();
       final response = await _apiService.checkUpdates(
         rxcuis: rxcuis,
         lastChecked: _lastChecked,
@@ -259,9 +419,9 @@ class CabinetProvider extends ChangeNotifier {
       final checkedAt = response['checked_at'] as String? ?? DateTime.now().toIso8601String();
       _lastNewAlertsCount = response['updates_found'] as int? ?? 0;
 
-      // Update cabinet items with fresh status
-      final updatedCabinet = <Drug>[];
-      for (final existing in _cabinet) {
+      // Update target cabinet items with fresh status
+      final updatedCabinetDrugs = <Drug>[];
+      for (final existing in currentDrugs) {
         Map<String, dynamic>? match;
         for (final item in updatedDrugsJson) {
           if (item is Map && item['rxcui']?.toString() == existing.rxcui) {
@@ -275,7 +435,7 @@ class CabinetProvider extends ChangeNotifier {
           final wasShortage = existing.hasActiveShortage;
 
           final updated = existing.copyWithUpdate(match);
-          updatedCabinet.add(updated);
+          updatedCabinetDrugs.add(updated);
 
           // Check if newly commercialized -> trigger notification
           if (!wasCommercial && updated.commercialGenericAvailable && _allowLaunchNotifs) {
@@ -288,7 +448,8 @@ class CabinetProvider extends ChangeNotifier {
 
           // Check if newly entered shortage -> trigger notification
           if (!wasShortage && updated.hasActiveShortage && _allowShortageNotifs) {
-            final reason = updated.activeShortageDetails.isNotEmpty && updated.activeShortageDetails[0]['reason'] != null
+            final reason = updated.activeShortageDetails.isNotEmpty &&
+                    updated.activeShortageDetails[0]['reason'] != null
                 ? updated.activeShortageDetails[0]['reason'] as String
                 : 'Demand increase or manufacturing delay';
             await _notificationService.showShortageNotification(
@@ -297,14 +458,17 @@ class CabinetProvider extends ChangeNotifier {
             );
           }
         } else {
-          updatedCabinet.add(existing);
+          updatedCabinetDrugs.add(existing);
         }
       }
 
-      _cabinet = updatedCabinet;
+      final targetIdx = _cabinets.indexWhere((c) => c.id == targetId);
+      if (targetIdx >= 0) {
+        _cabinets[targetIdx] = _cabinets[targetIdx].copyWith(drugs: updatedCabinetDrugs);
+      }
       _lastChecked = checkedAt;
 
-      await _storageService.saveCabinet(_cabinet);
+      await _storageService.saveCabinets(_cabinets);
       await _storageService.saveLastCheckedTimestamp(checkedAt);
     } catch (e) {
       _syncError = e.toString();

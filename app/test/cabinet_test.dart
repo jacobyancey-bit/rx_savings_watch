@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rx_savings_watch/models/drug.dart';
 import 'package:rx_savings_watch/models/medication_reminder.dart';
+import 'package:rx_savings_watch/models/patient_cabinet.dart';
 import 'package:rx_savings_watch/providers/cabinet_provider.dart';
 import 'package:rx_savings_watch/services/api_service.dart';
 import 'package:rx_savings_watch/services/notification_service.dart';
@@ -9,6 +10,8 @@ import 'package:rx_savings_watch/services/storage_service.dart';
 class MockStorageService extends StorageService {
   List<Drug> storedCabinet = [];
   Map<String, MedicationReminder> storedReminders = {};
+  List<PatientCabinet>? storedCabinets;
+  String storedActiveCabinetId = PatientCabinet.defaultId;
   String? storedLastChecked;
   String? storedUrl;
   bool allowLaunch = true;
@@ -21,6 +24,37 @@ class MockStorageService extends StorageService {
   @override
   Future<void> saveCabinet(List<Drug> drugs) async {
     storedCabinet = List.from(drugs);
+  }
+
+  @override
+  Future<List<PatientCabinet>> loadCabinets() async {
+    if (storedCabinets != null && storedCabinets!.isNotEmpty) {
+      return List.from(storedCabinets!);
+    }
+    return [
+      PatientCabinet.emptyDefault(
+        drugs: storedCabinet,
+        reminders: storedReminders,
+      ),
+    ];
+  }
+
+  @override
+  Future<void> saveCabinets(List<PatientCabinet> cabinets) async {
+    storedCabinets = List.from(cabinets);
+    final def = cabinets.where((c) => c.isDefault).toList();
+    if (def.isNotEmpty) {
+      storedCabinet = List.from(def.first.drugs);
+      storedReminders = Map.from(def.first.reminders);
+    }
+  }
+
+  @override
+  Future<String> getActiveCabinetId() async => storedActiveCabinetId;
+
+  @override
+  Future<void> saveActiveCabinetId(String id) async {
+    storedActiveCabinetId = id;
   }
 
   @override
@@ -75,6 +109,8 @@ class MockStorageService extends StorageService {
   Future<void> clearAllLocalData() async {
     storedCabinet = [];
     storedReminders = {};
+    storedCabinets = null;
+    storedActiveCabinetId = PatientCabinet.defaultId;
     storedLastChecked = null;
   }
 }
@@ -116,6 +152,8 @@ class MockApiService extends ApiService {
 class MockNotificationService extends NotificationService {
   bool launchNotified = false;
   bool shortageNotified = false;
+  final List<String> scheduledKeys = [];
+  final List<String> cancelledKeys = [];
 
   @override
   Future<void> showGenericLaunchNotification({
@@ -135,10 +173,20 @@ class MockNotificationService extends NotificationService {
   }
 
   @override
-  Future<void> scheduleDailyMedicationReminder(MedicationReminder reminder) async {}
+  Future<void> scheduleDailyMedicationReminder(
+    MedicationReminder reminder, {
+    String cabinetId = 'default',
+  }) async {
+    scheduledKeys.add('$cabinetId::${reminder.rxcui}::${reminder.notificationTitle}');
+  }
 
   @override
-  Future<void> cancelMedicationReminders(String rxcui) async {}
+  Future<void> cancelMedicationReminders(
+    String rxcui, {
+    String cabinetId = 'default',
+  }) async {
+    cancelledKeys.add('$cabinetId::$rxcui');
+  }
 }
 
 void main() {
@@ -189,6 +237,59 @@ void main() {
       await provider.removeDrug('855333');
       expect(provider.cabinet.isEmpty, true);
       expect(mockStorage.storedCabinet.isEmpty, true);
+    });
+
+    test('Caregiver multi-cabinet isolates drugs, labels reminders, and cancels alarms on delete', () async {
+      final mockStorage = MockStorageService();
+      final mockApi = MockApiService();
+      final mockNotifs = MockNotificationService();
+
+      final provider = CabinetProvider(
+        storageService: mockStorage,
+        apiService: mockApi,
+        notificationService: mockNotifs,
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Create a caregiver cabinet with control characters to verify sanitization
+      final mom = await provider.createCabinet(
+        name: '  Mom\n\t  ',
+        colorValue: PatientCabinet.palette[1],
+      );
+      expect(mom, isNotNull);
+      expect(mom!.name, 'Mom');
+      expect(provider.activeCabinetId, mom.id);
+      expect(provider.hasMultipleCabinets, true);
+
+      // Add a medication and reminder to Mom's cabinet
+      final eliquis = Drug(
+        rxcui: '1364430',
+        brandName: 'Eliquis',
+        genericName: 'apixaban',
+      );
+      await provider.addDrug(eliquis);
+      await provider.saveReminder(
+        MedicationReminder(
+          rxcui: '1364430',
+          drugName: 'Eliquis',
+          times: const [ReminderTime(hour: 8, minute: 0)],
+        ),
+      );
+
+      expect(provider.cabinet.length, 1);
+      expect(provider.reminderFor('1364430')?.notificationTitle, "Time for Mom's Eliquis");
+      expect(mockNotifs.scheduledKeys.last, "${mom.id}::1364430::Time for Mom's Eliquis");
+
+      // Switch back to default cabinet and verify complete isolation
+      await provider.switchCabinet(PatientCabinet.defaultId);
+      expect(provider.cabinet.isEmpty, true);
+      expect(provider.reminderFor('1364430'), isNull);
+
+      // Delete Mom's cabinet and verify its reminder alarms are cancelled
+      final deleted = await provider.deleteCabinet(mom.id);
+      expect(deleted, true);
+      expect(provider.cabinets.length, 1);
+      expect(mockNotifs.cancelledKeys.contains('${mom.id}::1364430'), true);
     });
   });
 }

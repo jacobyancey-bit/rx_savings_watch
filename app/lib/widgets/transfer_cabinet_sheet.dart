@@ -89,13 +89,14 @@ class _TransferCabinetSheetState extends State<TransferCabinetSheet> {
       return;
     }
 
+    final activeCab = context.read<CabinetProvider>().activeCabinet;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Import Prescriptions?'),
         content: Text(
           'Found ${rxcuis.length} prescription${rxcuis.length == 1 ? '' : 's'} in this QR code. '
-          'Would you like to import ${rxcuis.length == 1 ? 'it' : 'them'} into this device\'s cabinet?',
+          'Would you like to import ${rxcuis.length == 1 ? 'it' : 'them'} into ${activeCab.headerTitle}?',
         ),
         actions: [
           TextButton(

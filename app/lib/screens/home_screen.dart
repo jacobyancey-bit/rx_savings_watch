@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/cabinet_transfer_service.dart';
 import '../services/web_push_service.dart';
+import '../widgets/cabinet_switcher_sheet.dart';
 import '../widgets/drug_card.dart';
 import '../widgets/home_footer_section.dart';
 import '../widgets/privacy_promise_sheet.dart';
@@ -220,7 +221,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
-                  // Cabinet items header
+                  // Cabinet items header (zero-clutter tappable switcher for caregivers)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -228,21 +229,54 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'My Medication Cabinet (${cabinet.cabinet.length})',
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                            child: InkWell(
+                              onTap: () => CabinetSwitcherSheet.show(context),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (cabinet.hasMultipleCabinets || !cabinet.activeCabinet.isDefault) ...[
+                                          Container(
+                                            width: 10,
+                                            height: 10,
+                                            margin: const EdgeInsets.only(right: 7),
+                                            decoration: BoxDecoration(
+                                              color: Color(cabinet.activeCabinet.colorValue),
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                        ],
+                                        Flexible(
+                                          child: Text(
+                                            '${cabinet.activeCabinet.headerTitle} (${cabinet.cabinet.length})',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.titleMedium?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Icon(
+                                          Icons.keyboard_arrow_down_rounded,
+                                          size: 20,
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                        ),
+                                      ],
+                                    ),
+                                    if (cabinet.lastChecked != null)
+                                      Text(
+                                        'Updated: ${cabinet.lastChecked!.split('T')[0]}',
+                                        style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                                      ),
+                                  ],
                                 ),
-                                if (cabinet.lastChecked != null)
-                                  Text(
-                                    'Updated: ${cabinet.lastChecked!.split('T')[0]}',
-                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                                  ),
-                              ],
+                              ),
                             ),
                           ),
                           TextButton.icon(

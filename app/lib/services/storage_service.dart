@@ -2,10 +2,13 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/drug.dart';
 import '../models/medication_reminder.dart';
+import '../models/patient_cabinet.dart';
 
 class StorageService {
   static const String _cabinetKey = 'rx_savings_cabinet_drugs_v1';
   static const String _remindersKey = 'rx_savings_reminders_v1';
+  static const String _cabinetsKey = 'rx_savings_cabinets_v2';
+  static const String _activeCabinetIdKey = 'rx_savings_active_cabinet_id_v2';
   static const String _lastCheckedKey = 'rx_savings_last_checked_timestamp';
   static const String _serverUrlKey = 'rx_savings_custom_server_url';
   static const String _allowLaunchNotifsKey = 'rx_savings_allow_launch_notifs';
@@ -111,8 +114,55 @@ class StorageService {
     await prefs.setString(_remindersKey, jsonEncode(encoded));
   }
 
+  Future<List<PatientCabinet>> loadCabinets() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_cabinetsKey);
+    if (jsonString != null && jsonString.isNotEmpty) {
+      try {
+        final List decoded = jsonDecode(jsonString) as List;
+        final list = decoded
+            .whereType<Map>()
+            .map((m) => PatientCabinet.fromJson(Map<String, dynamic>.from(m)))
+            .toList();
+        if (list.isNotEmpty) return list;
+      } catch (_) {}
+    }
+
+    // Seamless zero-loss migration from single-cabinet storage
+    final legacyDrugs = await loadCabinet();
+    final legacyReminders = await loadReminders();
+    final migrated = [
+      PatientCabinet.emptyDefault(
+        drugs: legacyDrugs,
+        reminders: legacyReminders,
+      ),
+    ];
+    if (legacyDrugs.isNotEmpty || legacyReminders.isNotEmpty) {
+      await saveCabinets(migrated);
+    }
+    return migrated;
+  }
+
+  Future<void> saveCabinets(List<PatientCabinet> cabinets) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = cabinets.map((c) => c.toJson()).toList();
+    await prefs.setString(_cabinetsKey, jsonEncode(encoded));
+  }
+
+  Future<String> getActiveCabinetId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_activeCabinetIdKey) ?? PatientCabinet.defaultId;
+  }
+
+  Future<void> saveActiveCabinetId(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_activeCabinetIdKey, id);
+  }
+
   Future<void> clearAllLocalData() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_cabinetsKey);
+    await prefs.remove(_activeCabinetIdKey);
     await prefs.remove(_cabinetKey);
     await prefs.remove(_remindersKey);
     await prefs.remove(_lastCheckedKey);

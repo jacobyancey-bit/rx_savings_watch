@@ -10,6 +10,7 @@ const { createDrugsRouter } = require('./routes/drugs');
 const { createSchedulerRouter } = require('./routes/scheduler');
 const { createPushRouter } = require('./routes/push');
 const { createReviewsRouter } = require('./routes/reviews');
+const { createStatsRouter, recordDailyMetric, isLikelyBot } = require('./routes/stats');
 const { IngestionScheduler } = require('./scheduler');
 
 /**
@@ -79,12 +80,27 @@ function createApp(db, options = {}) {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
   });
 
+  // Aggregate zero-PII daily counters (no IPs, cookies, user IDs, or drug names stored)
+  app.use('/api/drugs', (req, res, next) => {
+    if (req.method === 'GET' && typeof req.query.q === 'string' && req.query.q.trim().length > 0) {
+      recordDailyMetric(db, 'api_searches');
+    }
+    next();
+  });
+  app.use('/api/check-updates', (req, res, next) => {
+    if (req.method === 'POST') {
+      recordDailyMetric(db, 'cabinet_syncs');
+    }
+    next();
+  });
+
   // API Routes
   app.use('/api', createCheckUpdatesRouter(db));
   app.use('/api', createDrugsRouter(db));
   app.use('/api', createSchedulerRouter(scheduler));
   app.use('/api', createPushRouter(db));
   app.use('/api', createReviewsRouter(db, { enableRateLimiter }));
+  app.use('/api', createStatsRouter(db));
 
   // Catch-all 404 for unknown /api/* routes (prevents info leakage)
   app.use('/api', (req, res) => {
@@ -94,6 +110,13 @@ function createApp(db, options = {}) {
   // Serve Flutter Web App at '/' if built into server/public
   const webPublicDir = path.join(__dirname, '..', 'public');
   if (fs.existsSync(webPublicDir)) {
+    app.get('/', (req, res) => {
+      if (!isLikelyBot(req.get('user-agent'))) {
+        recordDailyMetric(db, 'web_visits');
+      }
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.sendFile(path.join(webPublicDir, 'index.html'));
+    });
     app.use(express.static(webPublicDir, {
       setHeaders: (res, filePath) => {
         if (filePath.endsWith('.html') || filePath.endsWith('rx_bottle_ocr.js') || filePath.endsWith('rx_push_bridge.js')) {
@@ -101,10 +124,6 @@ function createApp(db, options = {}) {
         }
       }
     }));
-    app.get('/', (req, res) => {
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.sendFile(path.join(webPublicDir, 'index.html'));
-    });
   }
 
   // Error handling middleware

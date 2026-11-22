@@ -185,3 +185,11 @@ CREATE TABLE IF NOT EXISTS user_reviews (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_reviews_created ON user_reviews(created_at);
+
+-- 7. Zero-PII Aggregate Daily Stats (Plain daily integers only; no IPs, cookies, or user IDs)
+CREATE TABLE IF NOT EXISTS daily_stats (
+    date_key TEXT PRIMARY KEY,
+    web_visits INTEGER NOT NULL DEFAULT 0,
+    api_searches INTEGER NOT NULL DEFAULT 0,
+    cabinet_syncs INTEGER NOT NULL DEFAULT 0
+);

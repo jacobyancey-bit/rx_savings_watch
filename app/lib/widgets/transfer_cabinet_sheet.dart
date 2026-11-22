@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/cabinet_provider.dart';
+import '../screens/qr_transfer_scanner_screen.dart';
 import '../services/cabinet_transfer_service.dart';
 
 class TransferCabinetSheet extends StatefulWidget {
@@ -71,6 +72,15 @@ class _TransferCabinetSheetState extends State<TransferCabinetSheet> {
     } else {
       await _copyLink(link);
     }
+  }
+
+  Future<void> _scanQrCode() async {
+    final scanned = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const QrTransferScannerScreen()),
+    );
+    if (scanned == null || scanned.trim().isEmpty || !mounted) return;
+    _importController.text = scanned.trim();
+    await _handleImport();
   }
 
   Future<void> _handleImport() async {
@@ -291,9 +301,23 @@ class _TransferCabinetSheetState extends State<TransferCabinetSheet> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Paste a transfer link or RXW code copied from your computer or phone:',
+                'Scan the QR code from your computer or phone right inside this app, or paste a transfer link below:',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: FilledButton.icon(
+                  onPressed: _isImporting ? null : _scanQrCode,
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: const Text(
+                    'Scan QR Code in App',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),

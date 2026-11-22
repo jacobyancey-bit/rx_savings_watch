@@ -136,7 +136,31 @@ class _HomeScreenState extends State<HomeScreen> {
                   )
                 : const Icon(Icons.sync),
             tooltip: 'Check for generic updates',
-            onPressed: cabinet.isSyncing ? null : () => cabinet.syncCabinet(),
+            onPressed: cabinet.isSyncing
+                ? null
+                : () async {
+                    if (cabinet.cabinet.isEmpty) {
+                      ScaffoldMessenger.of(context).clearSnackBars();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Add a medication to your cabinet first to check for updates.'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                      return;
+                    }
+                    await cabinet.syncCabinet();
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).clearSnackBars();
+                    final msg = cabinet.syncError != null
+                        ? 'Could not reach server. Showing cached data.'
+                        : cabinet.lastNewAlertsCount > 0
+                            ? 'Found ${cabinet.lastNewAlertsCount} new medication update(s)!'
+                            : 'Cabinet checked — all ${cabinet.cabinet.length} medication${cabinet.cabinet.length == 1 ? '' : 's'} up to date!';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
+                    );
+                  },
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),

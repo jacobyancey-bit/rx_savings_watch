@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/partner_links.dart';
+import 'review_sheet.dart';
 
 /// Compact website-style bottom footer for the Home Screen.
 /// Keeps the main screen uncluttered while keeping essential disclaimers visible
@@ -295,6 +297,10 @@ class HomeFooterSection extends StatelessWidget {
             runSpacing: 2,
             children: [
               _footerLink(context, 'FAQs', () => _showFaqsSheet(context)),
+              if (kIsWeb) ...[
+                Text('•', style: TextStyle(color: muted, fontSize: 12)),
+                _footerLink(context, 'Review', () => ReviewSheet.show(context)),
+              ],
               Text('•', style: TextStyle(color: muted, fontSize: 12)),
               _footerLink(context, 'Contact', () => _showContactSheet(context)),
               Text('•', style: TextStyle(color: muted, fontSize: 12)),

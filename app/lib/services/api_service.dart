@@ -157,4 +157,50 @@ class ApiService {
       return false;
     }
   }
+
+  /// Submit a private review / feedback directly to support@danglingdicestudios.com
+  /// (never displayed publicly to other users).
+  Future<({bool ok, String? error})> submitReview({
+    required int rating,
+    required String category,
+    required String message,
+  }) async {
+    try {
+      final platform = kIsWeb
+          ? 'web'
+          : (defaultTargetPlatform == TargetPlatform.android
+              ? 'android'
+              : defaultTargetPlatform == TargetPlatform.iOS
+                  ? 'ios'
+                  : 'unknown');
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/reviews'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'rating': rating,
+              'category': category,
+              'message': message,
+              'platform': platform,
+            }),
+          )
+          .timeout(const Duration(seconds: 12));
+
+      if (response.statusCode == 201) {
+        return (ok: true, error: null);
+      }
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map && decoded['message'] != null) {
+          return (ok: false, error: decoded['message'].toString());
+        }
+        if (decoded is Map && decoded['error'] != null) {
+          return (ok: false, error: decoded['error'].toString());
+        }
+      } catch (_) {}
+      return (ok: false, error: 'Could not send review right now. Please try again.');
+    } catch (_) {
+      return (ok: false, error: 'Could not reach server. You can also email support@danglingdicestudios.com.');
+    }
+  }
 }

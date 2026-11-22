@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/web_push_service.dart';
 import '../widgets/privacy_promise_sheet.dart';
+import '../widgets/review_sheet.dart';
 import '../widgets/transfer_cabinet_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -356,6 +357,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ],
+          const SizedBox(height: 28),
+
+          // Reviews & Feedback (Private to support@danglingdicestudios.com)
+          Text(
+            'Reviews & Feedback',
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              leading: Icon(Icons.rate_review_outlined, color: Colors.teal.shade700),
+              title: const Text('Leave a Review'),
+              subtitle: const Text('Send private feedback directly to our team'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => ReviewSheet.show(context),
+            ),
+          ),
+
           const SizedBox(height: 28),
 
           // Legal & Official Policies

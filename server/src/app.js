@@ -9,6 +9,7 @@ const { createCheckUpdatesRouter } = require('./routes/checkUpdates');
 const { createDrugsRouter } = require('./routes/drugs');
 const { createSchedulerRouter } = require('./routes/scheduler');
 const { createPushRouter } = require('./routes/push');
+const { createReviewsRouter } = require('./routes/reviews');
 const { IngestionScheduler } = require('./scheduler');
 
 /**
@@ -83,6 +84,7 @@ function createApp(db, options = {}) {
   app.use('/api', createDrugsRouter(db));
   app.use('/api', createSchedulerRouter(scheduler));
   app.use('/api', createPushRouter(db));
+  app.use('/api', createReviewsRouter(db, { enableRateLimiter }));
 
   // Catch-all 404 for unknown /api/* routes (prevents info leakage)
   app.use('/api', (req, res) => {

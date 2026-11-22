@@ -172,3 +172,16 @@ CREATE TABLE IF NOT EXISTS alert_events (
 CREATE INDEX IF NOT EXISTS idx_alert_events_drug_type ON alert_events(drug_id, event_type);
 CREATE INDEX IF NOT EXISTS idx_alert_events_detected ON alert_events(detected_at);
 CREATE INDEX IF NOT EXISTS idx_alert_events_drug ON alert_events(drug_id);
+
+-- 6. Private User Reviews Table (Admin-only; never exposed publicly)
+CREATE TABLE IF NOT EXISTS user_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+    category TEXT NOT NULL DEFAULT 'general',
+    message TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'unknown',
+    emailed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_reviews_created ON user_reviews(created_at);

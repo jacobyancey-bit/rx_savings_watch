@@ -5,6 +5,7 @@ import '../models/drug.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
 import '../services/bottle_scanner_service.dart';
+import '../widgets/add_supplement_sheet.dart';
 import 'drug_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -373,7 +374,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
           if (BottleScannerService.isSupported)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
               child: SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -395,6 +396,31 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               ),
             ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final added = await AddSupplementSheet.show(
+                    context,
+                    initialName: _controller.text.trim().isNotEmpty ? _controller.text.trim() : null,
+                  );
+                  if (added != null && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('${added.name} added to OTC & Supplements'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.spa_outlined, size: 18),
+                label: const Text('Add OTC / Supplement (Vitamins, etc.)'),
+              ),
+            ),
+          ),
           if (_liveSearchNote != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -500,6 +526,21 @@ class _SearchScreenState extends State<SearchScreen> {
                     icon: const Icon(Icons.travel_explore),
                     label: Text('Search Official FDA Databases for "$query"'),
                   ),
+                ),
+              ],
+              if (query.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final added = await AddSupplementSheet.show(context, initialName: query);
+                    if (added != null && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('${added.name} added to OTC & Supplements')),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.spa_outlined, size: 18),
+                  label: Text('Add "$query" as OTC / Supplement'),
                 ),
               ],
             ],

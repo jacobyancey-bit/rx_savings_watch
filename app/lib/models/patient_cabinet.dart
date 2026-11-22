@@ -1,5 +1,6 @@
 import 'drug.dart';
 import 'medication_reminder.dart';
+import 'otc_supplement.dart';
 
 class PatientCabinet {
   static const String defaultId = 'default';
@@ -20,6 +21,7 @@ class PatientCabinet {
   final String name;
   final int colorValue;
   final List<Drug> drugs;
+  final List<OtcSupplement> supplements;
   final Map<String, MedicationReminder> reminders;
 
   const PatientCabinet({
@@ -27,6 +29,7 @@ class PatientCabinet {
     required this.name,
     this.colorValue = 0xFF00796B,
     this.drugs = const [],
+    this.supplements = const [],
     this.reminders = const {},
   });
 
@@ -59,6 +62,7 @@ class PatientCabinet {
 
   factory PatientCabinet.emptyDefault({
     List<Drug> drugs = const [],
+    List<OtcSupplement> supplements = const [],
     Map<String, MedicationReminder> reminders = const {},
   }) {
     return PatientCabinet(
@@ -66,6 +70,7 @@ class PatientCabinet {
       name: defaultName,
       colorValue: palette.first,
       drugs: List<Drug>.from(drugs),
+      supplements: List<OtcSupplement>.from(supplements),
       reminders: Map<String, MedicationReminder>.from(reminders),
     );
   }
@@ -74,6 +79,7 @@ class PatientCabinet {
     String? name,
     int? colorValue,
     List<Drug>? drugs,
+    List<OtcSupplement>? supplements,
     Map<String, MedicationReminder>? reminders,
   }) {
     return PatientCabinet(
@@ -81,6 +87,7 @@ class PatientCabinet {
       name: name != null ? sanitizeName(name, fallback: this.name) : this.name,
       colorValue: colorValue != null ? sanitizeColor(colorValue) : this.colorValue,
       drugs: drugs ?? List<Drug>.from(this.drugs),
+      supplements: supplements ?? List<OtcSupplement>.from(this.supplements),
       reminders: reminders ?? Map<String, MedicationReminder>.from(this.reminders),
     );
   }
@@ -90,6 +97,7 @@ class PatientCabinet {
         'name': name,
         'color_value': colorValue,
         'drugs': drugs.map((d) => d.toJson()).toList(),
+        'supplements': supplements.map((s) => s.toJson()).toList(),
         'reminders': reminders.map((k, v) => MapEntry(k, v.toJson())),
       };
 
@@ -105,6 +113,11 @@ class PatientCabinet {
     final rawDrugs = (json['drugs'] as List? ?? [])
         .whereType<Map>()
         .map((m) => Drug.fromJson(Map<String, dynamic>.from(m)))
+        .toList();
+
+    final rawSupplements = (json['supplements'] as List? ?? [])
+        .whereType<Map>()
+        .map((m) => OtcSupplement.fromJson(Map<String, dynamic>.from(m)))
         .toList();
 
     final rawReminders = <String, MedicationReminder>{};
@@ -123,6 +136,7 @@ class PatientCabinet {
       name: name,
       colorValue: colorValue,
       drugs: rawDrugs,
+      supplements: rawSupplements,
       reminders: rawReminders,
     );
   }

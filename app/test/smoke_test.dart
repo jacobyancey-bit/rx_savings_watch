@@ -203,14 +203,26 @@ void main() {
       final momId = provider.activeCabinetId;
       expect(notifs.scheduled.last, "$momId::1364430::Time for Mom's Eliquis");
 
-      // 7. Verify zero PII ever sent to API (only numeric RxCUIs)
+      // 7. Add an OTC Supplement to Mom's cabinet and verify separated section + local-only privacy
+      final vitD = await provider.addSupplement(
+        name: 'Vitamin D3',
+        dosage: '2000 IU',
+        note: 'With breakfast',
+      );
+      expect(vitD, isNotNull);
+      await tester.pumpAndSettle();
+      expect(find.text('OTC & Supplements (1)'), findsOneWidget);
+      expect(find.text('Vitamin D3'), findsOneWidget);
+      expect(find.text('2000 IU • With breakfast'), findsOneWidget);
+
+      // 8. Verify zero PII and zero OTC IDs ever sent to API (only numeric RxCUIs)
       for (final payload in api.recordedRxcuiPayloads) {
         for (final id in payload) {
           expect(RegExp(r'^\d+$').hasMatch(id), true, reason: 'Only numeric RxCUIs may leave device');
         }
       }
 
-      // 8. Switch back to My Cabinet and verify original state is untouched
+      // 9. Switch back to My Cabinet and verify original state is untouched (and Mom's OTC is isolated)
       await tester.tap(find.text("Mom's Cabinet (1)"));
       await tester.pumpAndSettle();
       await tester.tap(find.text('My Cabinet'));
@@ -219,6 +231,7 @@ void main() {
       expect(find.text('My Medication Cabinet (1)'), findsOneWidget);
       expect(find.text('Vyvanse'), findsOneWidget);
       expect(find.text('Taken Today'), findsOneWidget);
+      expect(find.text('Vitamin D3'), findsNothing);
     },
   );
 }

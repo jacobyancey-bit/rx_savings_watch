@@ -4,11 +4,13 @@ import 'package:provider/provider.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/cabinet_transfer_service.dart';
 import '../services/web_push_service.dart';
+import '../widgets/add_supplement_sheet.dart';
 import '../widgets/cabinet_switcher_sheet.dart';
 import '../widgets/drug_card.dart';
 import '../widgets/home_footer_section.dart';
 import '../widgets/privacy_promise_sheet.dart';
 import '../widgets/reminder_sheet.dart';
+import '../widgets/supplement_card.dart';
 import '../widgets/transfer_cabinet_sheet.dart';
 import 'drug_detail_screen.dart';
 import 'search_screen.dart';
@@ -299,42 +301,106 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
-                  // Empty State or List
-                  if (cabinet.cabinet.isEmpty)
+                  // Empty State or Prescription + OTC/Supplement Lists
+                  if (cabinet.cabinet.isEmpty && cabinet.supplements.isEmpty)
                     SliverToBoxAdapter(
                       child: _buildEmptyState(context),
                     )
-                  else
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final drug = cabinet.cabinet[index];
-                          return DrugCard(
-                            drug: drug,
-                            reminder: cabinet.reminderFor(drug.rxcui),
-                            onReminderTap: () => ReminderSheet.show(context, drug),
-                            onToggleTaken: () => cabinet.toggleTakenToday(drug.rxcui),
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => DrugDetailScreen(drug: drug),
-                                ),
-                              );
-                            },
-                            onRemove: () {
-                              cabinet.removeDrug(drug.rxcui);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Removed ${drug.displayName}'),
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                        childCount: cabinet.cabinet.length,
+                  else ...[
+                    if (cabinet.cabinet.isNotEmpty)
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final drug = cabinet.cabinet[index];
+                            return DrugCard(
+                              drug: drug,
+                              reminder: cabinet.reminderFor(drug.rxcui),
+                              onReminderTap: () => ReminderSheet.show(context, drug),
+                              onToggleTaken: () => cabinet.toggleTakenToday(drug.rxcui),
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => DrugDetailScreen(drug: drug),
+                                  ),
+                                );
+                              },
+                              onRemove: () {
+                                cabinet.removeDrug(drug.rxcui);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Removed ${drug.displayName}'),
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                          childCount: cabinet.cabinet.length,
+                        ),
                       ),
-                    ),
+
+                    // Clean, separated OTC & Supplements section (hidden until used)
+                    if (cabinet.supplements.isNotEmpty) ...[
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 18, 12, 6),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.spa_outlined, size: 18, color: Colors.teal.shade700),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'OTC & Supplements (${cabinet.supplements.length})',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              TextButton.icon(
+                                onPressed: () => AddSupplementSheet.show(context),
+                                icon: const Icon(Icons.add, size: 16),
+                                label: const Text('Add'),
+                                style: TextButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final supp = cabinet.supplements[index];
+                            return SupplementCard(
+                              supplement: supp,
+                              reminder: cabinet.reminderFor(supp.id),
+                              onReminderTap: () => ReminderSheet.show(
+                                context,
+                                supp.toReminderDrug(),
+                                dosage: supp.dosage,
+                              ),
+                              onToggleTaken: () => cabinet.toggleTakenToday(supp.id),
+                              onRemove: () {
+                                cabinet.removeSupplement(supp.id);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Removed ${supp.name}'),
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                          childCount: cabinet.supplements.length,
+                        ),
+                      ),
+                    ],
+                  ],
 
                   // FAQs, Contact Info & Important Disclaimers
                   const SliverToBoxAdapter(

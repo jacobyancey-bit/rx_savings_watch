@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/drug.dart';
 import '../models/medication_reminder.dart';
+import '../models/otc_supplement.dart';
 import '../models/patient_cabinet.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
@@ -47,6 +48,7 @@ class CabinetProvider extends ChangeNotifier {
   String get activeCabinetId => activeCabinet.id;
   bool get hasMultipleCabinets => _cabinets.length > 1;
   List<Drug> get cabinet => List.unmodifiable(activeCabinet.drugs);
+  List<OtcSupplement> get supplements => List.unmodifiable(activeCabinet.supplements);
   Map<String, MedicationReminder> get reminders => Map.unmodifiable(activeCabinet.reminders);
   MedicationReminder? reminderFor(String rxcui) => activeCabinet.reminders[rxcui];
   bool get isLoading => _isLoading;
@@ -265,7 +267,7 @@ class CabinetProvider extends ChangeNotifier {
     for (final rxcui in current.reminders.keys) {
       await _notificationService.cancelMedicationReminders(rxcui, cabinetId: current.id);
     }
-    _replaceCabinet(current.copyWith(drugs: const [], reminders: const {}));
+    _replaceCabinet(current.copyWith(drugs: const [], supplements: const [], reminders: const {}));
     _syncError = null;
     _lastNewAlertsCount = 0;
     await _persistCabinets();
@@ -310,6 +312,51 @@ class CabinetProvider extends ChangeNotifier {
     }
     _replaceCabinet(current.copyWith(drugs: nextDrugs, reminders: nextReminders));
     await _persistCabinets();
+    notifyListeners();
+  }
+
+  /// Adds an OTC / Supplement strictly on-device (never sent to server or push).
+  Future<OtcSupplement?> addSupplement({
+    required String name,
+    String? dosage,
+    String? note,
+  }) async {
+    final current = activeCabinet;
+    if (current.supplements.length >= OtcSupplement.maxPerCabinet) return null;
+
+    final cleanName = OtcSupplement.sanitizeText(name, OtcSupplement.maxNameLength);
+    if (cleanName.isEmpty) return null;
+
+    final cleanDosage = dosage != null
+        ? OtcSupplement.sanitizeText(dosage, OtcSupplement.maxDosageLength)
+        : '';
+    final cleanNote = note != null
+        ? OtcSupplement.sanitizeText(note, OtcSupplement.maxNoteLength)
+        : '';
+
+    final created = OtcSupplement(
+      id: 'otc_${DateTime.now().microsecondsSinceEpoch}',
+      name: cleanName,
+      dosage: cleanDosage.isNotEmpty ? cleanDosage : null,
+      note: cleanNote.isNotEmpty ? cleanNote : null,
+    );
+
+    final nextSupps = List<OtcSupplement>.from(current.supplements)..add(created);
+    _replaceCabinet(current.copyWith(supplements: nextSupps));
+    await _storageService.saveCabinets(_cabinets);
+    notifyListeners();
+    return created;
+  }
+
+  Future<void> removeSupplement(String supplementId) async {
+    final current = activeCabinet;
+    final nextSupps = current.supplements.where((s) => s.id != supplementId).toList();
+    final nextReminders = Map<String, MedicationReminder>.from(current.reminders);
+    if (nextReminders.remove(supplementId) != null) {
+      await _notificationService.cancelMedicationReminders(supplementId, cabinetId: current.id);
+    }
+    _replaceCabinet(current.copyWith(supplements: nextSupps, reminders: nextReminders));
+    await _storageService.saveCabinets(_cabinets);
     notifyListeners();
   }
 

@@ -36,12 +36,18 @@ async function fetchJsonSafe(url) {
 
 function formatFdaDate(raw) {
   if (!raw) return null;
-  const s = String(raw).replace(/[^0-9]/g, '');
+  const str = String(raw).trim();
+  // Handle MM/DD/YYYY (used by OpenFDA Drug Shortages initial_posting_date)
+  const usMatch = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (usMatch) {
+    return `${usMatch[3]}-${usMatch[1]}-${usMatch[2]}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    return str.slice(0, 10);
+  }
+  const s = str.replace(/[^0-9]/g, '');
   if (s.length === 8) {
     return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
-  }
-  if (/^\d{4}-\d{2}-\d{2}/.test(String(raw))) {
-    return String(raw).slice(0, 10);
   }
   return null;
 }
@@ -578,7 +584,7 @@ function classifyDosageBucket(formStr) {
   if (/inject|intraven|infus|syringe|vial|ampul|subcut|intramusc/.test(f)) return 'injection';
   if (/inhal|aerosol|nebul|spray/.test(f)) return 'inhalation';
   if (/ophthalm|eye|otic|ear/.test(f)) return 'ophthalmic';
-  if (/cream|oint|gel|lotion|patch|topical/.test(f)) return 'topical';
+  if (/cream|oint|gel|lotion|patch|film|transdermal|topical/.test(f)) return 'topical';
   if (/tablet|capsule|oral|chew|lozenge|powder/.test(f)) return 'oral';
   return 'other';
 }

@@ -161,6 +161,10 @@ class IngestionScheduler {
       `).all(`-${minAgeHours} hours`, batchSize);
 
       if (oldestDrugs.length === 0) {
+        // Still refresh live FDA Drug Shortages even when all drugs were recently verified
+        await shortagesFn(this.db).catch(err => {
+          console.error('[Rolling Audit] Live shortages refresh error:', err.message);
+        });
         return {
           refreshed: 0,
           newlyLaunched: 0,

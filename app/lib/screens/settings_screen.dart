@@ -358,7 +358,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
           const SizedBox(height: 28),
 
-          // Legal & Policies (Website URLs)
+          // Legal & Official Policies
           Text(
             'Legal & Official Policies',
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -371,7 +371,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   leading: Icon(Icons.verified_user_outlined, color: Colors.teal.shade700),
                   title: const Text('Read Our Privacy Promise'),
-                  subtitle: const Text('Plain-English summary right in this app'),
+                  subtitle: const Text('Quick summary right in this app'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => PrivacyPromiseSheet.show(context),
                 ),
@@ -379,7 +379,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   leading: const Icon(Icons.privacy_tip_outlined),
                   title: const Text('Privacy Policy'),
-                  subtitle: const Text(PartnerLinks.privacyPolicyUrl),
                   trailing: const Icon(Icons.open_in_new, size: 18),
                   onTap: () async {
                     await launchUrl(
@@ -391,8 +390,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.description_outlined),
-                  title: const Text('Terms of Service & Medical Disclaimer'),
-                  subtitle: const Text(PartnerLinks.termsOfServiceUrl),
+                  title: const Text('Terms of Service'),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () async {
+                    await launchUrl(
+                      Uri.parse(PartnerLinks.termsOfServiceUrl),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.medical_information_outlined),
+                  title: const Text('Medical Disclaimer'),
                   trailing: const Icon(Icons.open_in_new, size: 18),
                   onTap: () async {
                     await launchUrl(

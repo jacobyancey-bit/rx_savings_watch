@@ -209,6 +209,7 @@ function createCheckUpdatesRouter(db) {
         has_active_shortage: activeShortages.length > 0,
         active_shortage_details: activeShortages.map(s => ({
           status: s.status,
+          dosage_form: s.dosage_form || null,
           reason: s.reason,
           start_date: s.shortage_start_date
         })),

@@ -58,6 +58,34 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     return strengths.first;
   }
 
+  /// Filters FDA shortage entries strictly to the currently selected dosage strength.
+  /// If a shortage entry specifies a strength (e.g., "25 mg • Capsule, Extended Release"),
+  /// it will ONLY display when the user has that exact strength selected.
+  List<Map<String, dynamic>> _shortagesForSelectedStrength(Drug drug) {
+    if (!drug.hasActiveShortage || drug.activeShortageDetails.isEmpty) {
+      return const [];
+    }
+    final selected = _selectedStrength?.trim().toLowerCase();
+    if (selected == null || selected.isEmpty) {
+      return drug.activeShortageDetails;
+    }
+
+    final strengthPattern = RegExp(r'\b(\d+(?:\.\d+)?)\s*(mg|mcg|ml|g|%)\b', caseSensitive: false);
+    final selectedMatch = strengthPattern.firstMatch(selected);
+    final selectedNorm = selectedMatch != null
+        ? '${selectedMatch.group(1)} ${selectedMatch.group(2)!.toLowerCase()}'
+        : selected;
+
+    return drug.activeShortageDetails.where((s) {
+      final formStr = (s['dosage_form'] ?? '').toString().toLowerCase();
+      final formMatch = strengthPattern.firstMatch(formStr);
+      // If FDA did not specify a particular strength on this shortage record, show it
+      if (formMatch == null) return true;
+      final formNorm = '${formMatch.group(1)} ${formMatch.group(2)!.toLowerCase()}';
+      return formNorm == selectedNorm;
+    }).toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -573,67 +601,100 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               ),
             ],
 
-            // Supply Shortages if active
-            if (drug.hasActiveShortage) ...[
-              const SizedBox(height: 24),
-              Text(
-                'FDA Drug Shortage Report',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.brightness == Brightness.dark ? Colors.amber.shade200 : Colors.orange.shade900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.brightness == Brightness.dark
-                      ? Colors.amber.withValues(alpha: 0.14)
-                      : Colors.orange.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: theme.brightness == Brightness.dark
-                        ? Colors.amber.withValues(alpha: 0.4)
-                        : Colors.orange.withValues(alpha: 0.35),
+            // Supply Shortages — filtered strictly to the user's selected dosage strength
+            ...() {
+              final matchingShortages = _shortagesForSelectedStrength(drug);
+              if (matchingShortages.isEmpty) return const <Widget>[];
+              return <Widget>[
+                const SizedBox(height: 24),
+                Text(
+                  _selectedStrength != null
+                      ? 'FDA Drug Shortage Report ($_selectedStrength)'
+                      : 'FDA Drug Shortage Report',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.brightness == Brightness.dark ? Colors.amber.shade200 : Colors.orange.shade900,
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.warning_amber_rounded,
-                          color: theme.brightness == Brightness.dark ? Colors.amber.shade300 : Colors.orange.shade800,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Status: Current Shortage',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: theme.colorScheme.onSurface,
-                          ),
-                        ),
-                      ],
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: theme.brightness == Brightness.dark
+                        ? Colors.amber.withValues(alpha: 0.14)
+                        : Colors.orange.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: theme.brightness == Brightness.dark
+                          ? Colors.amber.withValues(alpha: 0.4)
+                          : Colors.orange.withValues(alpha: 0.35),
                     ),
-                    const SizedBox(height: 8),
-                    for (final s in drug.activeShortageDetails) ...[
-                      if (s['reason'] != null)
-                        Text(
-                          'Reason: ${s['reason']}',
-                          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: theme.brightness == Brightness.dark ? Colors.amber.shade300 : Colors.orange.shade800,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Status: Current Shortage',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      for (final s in matchingShortages) ...[
+                        if (s['dosage_form'] != null && s['dosage_form'].toString().isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              'Affected Dose & Form: ${s['dosage_form']}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          ),
+                        if (s['reason'] != null)
+                          Text(
+                            'Reason: ${s['reason']}',
+                            style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
+                          ),
+                        if (s['start_date'] != null)
+                          Text(
+                            'Reported: ${s['start_date']}',
+                            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        const SizedBox(height: 6),
+                      ],
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                          onPressed: () => launchUrl(
+                            Uri.parse('https://www.accessdata.fda.gov/scripts/drugshortages/default.cfm'),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          icon: const Icon(Icons.open_in_new, size: 16),
+                          label: const Text('Verify on official FDA Drug Shortages'),
                         ),
-                      if (s['start_date'] != null)
-                        Text(
-                          'Reported: ${s['start_date']}',
-                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
-                        ),
+                      ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ];
+            }(),
 
             // Alerts Log
             if (drug.alerts.isNotEmpty) ...[

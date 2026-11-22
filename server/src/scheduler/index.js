@@ -89,7 +89,9 @@ class IngestionScheduler {
   async runShortagesSync() {
     console.log(`[Scheduler ${new Date().toISOString()}] Syncing FDA Drug Shortages...`);
     try {
-      const res = await ingestFdaShortages(this.db);
+      const res = process.env.NODE_ENV === 'test'
+        ? await ingestFdaShortages(this.db)
+        : await ingestLiveShortages(this.db);
       this.lastSyncTimes.shortages = new Date().toISOString();
       return res;
     } catch (err) {

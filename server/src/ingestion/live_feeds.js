@@ -288,7 +288,7 @@ async function fetchDailyMedSpls(genericName) {
  * 6. OpenFDA Drug Shortages: Pull current live FDA shortages.
  */
 async function fetchLiveFdaShortages() {
-  const data = await fetchJsonSafe('https://api.fda.gov/drug/shortages.json?search=status:"Current"&limit=100');
+  const data = await fetchJsonSafe('https://api.fda.gov/drug/shortages.json?search=status:"Current"&limit=1000');
   return data?.results || [];
 }
 
@@ -572,14 +572,32 @@ async function ingestLiveDrug(db, seed) {
   };
 }
 
+function classifyDosageBucket(formStr) {
+  const f = String(formStr || '').toLowerCase();
+  if (!f) return 'unknown';
+  if (/inject|intraven|infus|syringe|vial|ampul|subcut|intramusc/.test(f)) return 'injection';
+  if (/inhal|aerosol|nebul|spray/.test(f)) return 'inhalation';
+  if (/ophthalm|eye|otic|ear/.test(f)) return 'ophthalmic';
+  if (/cream|oint|gel|lotion|patch|topical/.test(f)) return 'topical';
+  if (/tablet|capsule|oral|chew|lozenge|powder/.test(f)) return 'oral';
+  return 'other';
+}
+
 /**
- * Sync live FDA Drug Shortages and match them to drugs currently in our catalog.
+ * Sync live FDA Drug Shortages and match them STRICTLY to drugs in our catalog.
+ * - Replaces stale 'Current' rows so resolved shortages clear immediately.
+ * - Enforces dosage-form compatibility (e.g., never flags oral tablets for an IV injection shortage).
+ * - Excludes FDA entries explicitly marked availability="Available".
  */
 async function ingestLiveShortages(db) {
   const shortages = await fetchLiveFdaShortages();
   if (shortages.length === 0) return { matched: 0, fetched: 0 };
 
-  const allDrugs = db.prepare('SELECT id, generic_name, brand_name FROM drugs').all();
+  const allDrugs = db.prepare('SELECT id, generic_name, brand_name, dosage_form FROM drugs').all();
+
+  // Clear previously cached 'Current' shortages so resolved shortages never linger and cause false panic
+  db.prepare("DELETE FROM drug_shortages WHERE status = 'Current'").run();
+
   const findExisting = db.prepare(
     'SELECT id FROM drug_shortages WHERE drug_id = ? AND status = ? AND generic_name = ?'
   );
@@ -591,32 +609,60 @@ async function ingestLiveShortages(db) {
 
   let matched = 0;
   for (const s of shortages) {
-    const genLower = (s.generic_name || '').toLowerCase();
-    if (!genLower) continue;
-    const drug = allDrugs.find(d => {
-      const firstWord = (d.generic_name || '').toLowerCase().split(' ')[0];
-      return firstWord.length >= 5 && genLower.includes(firstWord);
-    });
-    if (!drug) continue;
+    if ((s.status || '').toLowerCase() !== 'current') continue;
+    const avail = (s.availability || '').toLowerCase().trim();
+    // Skip entries where FDA explicitly states the product is currently Available
+    if (avail === 'available') continue;
 
-    const existing = findExisting.get(drug.id, 'Current', s.generic_name);
-    if (!existing) {
-      insertShortage.run(
-        drug.id,
-        s.generic_name,
-        s.dosage_form || null,
-        s.shortage_reason || 'Reported by FDA Drug Shortages',
-        formatFdaDate(s.initial_posting_date)
-      );
+    const genLower = (s.generic_name || '').toLowerCase().trim();
+    if (!genLower) continue;
+
+    const shortageBucket = classifyDosageBucket(s.dosage_form || s.presentation || genLower);
+
+    // Find all matching drugs in our catalog with compatible dosage form
+    const matchingDrugs = allDrugs.filter(d => {
+      const drugGen = (d.generic_name || '').toLowerCase().trim();
+      const firstWord = drugGen.split(/[\s,/]+/)[0];
+      if (firstWord.length < 5) return false;
+
+      // Require word-boundary ingredient match
+      const wordRegex = new RegExp(`\\b${firstWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+      if (!wordRegex.test(genLower)) return false;
+
+      // Prevent multi-ingredient combo mismatch (e.g., don't match single-ingredient shortage to 3-drug combo or vice-versa)
+      const drugIsCombo = drugGen.includes(',') || drugGen.includes(' and ');
+      const shortageIsCombo = genLower.includes(',') || genLower.includes(' and ') || genLower.includes('/');
+      if (drugIsCombo !== shortageIsCombo) return false;
+
+      // Enforce dosage-form compatibility (never match IV/injection shortage to oral tablets/capsules!)
+      const drugBucket = classifyDosageBucket(d.dosage_form);
+      if (shortageBucket !== 'unknown' && drugBucket !== 'unknown' && shortageBucket !== drugBucket) {
+        return false;
+      }
+
+      return true;
+    });
+
+    for (const drug of matchingDrugs) {
+      const existing = findExisting.get(drug.id, 'Current', s.generic_name);
+      if (!existing) {
+        insertShortage.run(
+          drug.id,
+          s.generic_name,
+          s.dosage_form || null,
+          s.shortage_reason || 'Reported by FDA Drug Shortages',
+          formatFdaDate(s.initial_posting_date)
+        );
+        matched++;
+      }
     }
-    matched++;
   }
 
   recordIngestionRun(db, {
     feedName: 'live_fda_shortages',
     status: 'success',
     recordsProcessed: matched,
-    notes: `Scanned ${shortages.length} active FDA shortages`,
+    notes: `Scanned ${shortages.length} active FDA shortages (strict form+availability match)`,
   });
 
   return { matched, fetched: shortages.length };

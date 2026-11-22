@@ -22,92 +22,18 @@ class CabinetSwitcherSheet extends StatelessWidget {
     BuildContext context, {
     PatientCabinet? existing,
   }) async {
-    final controller = TextEditingController(text: existing?.name ?? '');
-    int selectedColor = existing?.colorValue ??
+    final initialColor = existing?.colorValue ??
         PatientCabinet.palette[
             context.read<CabinetProvider>().cabinets.length % PatientCabinet.palette.length];
 
     final result = await showDialog<(String, int)?>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: Text(existing == null ? 'Add Patient Cabinet' : 'Edit Cabinet'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  maxLength: PatientCabinet.maxNameLength,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'Nickname (e.g., Mom, Dad, Spouse)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Color Tag',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 8,
-                  children: PatientCabinet.palette.map((colorVal) {
-                    final isSelected = selectedColor == colorVal;
-                    return InkWell(
-                      onTap: () => setState(() => selectedColor = colorVal),
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: Color(colorVal),
-                          shape: BoxShape.circle,
-                          border: isSelected
-                              ? Border.all(
-                                  color: Theme.of(ctx).colorScheme.onSurface,
-                                  width: 2.5,
-                                )
-                              : null,
-                        ),
-                        child: isSelected
-                            ? const Icon(Icons.check, color: Colors.white, size: 18)
-                            : null,
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Stored strictly on this device. Nicknames are never uploaded to any server.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(null),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final clean = PatientCabinet.sanitizeName(controller.text, fallback: '');
-                if (clean.isEmpty) return;
-                Navigator.of(ctx).pop((clean, selectedColor));
-              },
-              child: Text(existing == null ? 'Create' : 'Save'),
-            ),
-          ],
-        ),
+      builder: (_) => _CabinetEditorDialog(
+        existing: existing,
+        initialColor: initialColor,
       ),
     );
 
-    controller.dispose();
     if (result == null || !context.mounted) return;
 
     final provider = context.read<CabinetProvider>();
@@ -314,6 +240,115 @@ class CabinetSwitcherSheet extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CabinetEditorDialog extends StatefulWidget {
+  final PatientCabinet? existing;
+  final int initialColor;
+
+  const _CabinetEditorDialog({
+    required this.existing,
+    required this.initialColor,
+  });
+
+  @override
+  State<_CabinetEditorDialog> createState() => _CabinetEditorDialogState();
+}
+
+class _CabinetEditorDialogState extends State<_CabinetEditorDialog> {
+  late final TextEditingController _controller;
+  late int _selectedColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.existing?.name ?? '');
+    _selectedColor = widget.initialColor;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.existing == null ? 'Add Patient Cabinet' : 'Edit Cabinet'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              maxLength: PatientCabinet.maxNameLength,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Nickname (e.g., Mom, Dad, Spouse)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Color Tag',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: PatientCabinet.palette.map((colorVal) {
+                final isSelected = _selectedColor == colorVal;
+                return InkWell(
+                  onTap: () => setState(() => _selectedColor = colorVal),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Color(colorVal),
+                      shape: BoxShape.circle,
+                      border: isSelected
+                          ? Border.all(
+                              color: Theme.of(context).colorScheme.onSurface,
+                              width: 2.5,
+                            )
+                          : null,
+                    ),
+                    child: isSelected
+                        ? const Icon(Icons.check, color: Colors.white, size: 18)
+                        : null,
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Stored strictly on this device. Nicknames are never uploaded to any server.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final clean = PatientCabinet.sanitizeName(_controller.text, fallback: '');
+            if (clean.isEmpty) return;
+            Navigator.of(context).pop((clean, _selectedColor));
+          },
+          child: Text(widget.existing == null ? 'Create' : 'Save'),
+        ),
+      ],
     );
   }
 }

@@ -100,7 +100,14 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(Icons.medication_liquid_outlined, color: Colors.teal),
             SizedBox(width: 8),
-            Text('Rx Savings Watch', style: TextStyle(fontWeight: FontWeight.bold)),
+            Flexible(
+              child: Text(
+                'Rx Savings Watch',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
           ],
         ),
         actions: [

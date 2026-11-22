@@ -280,81 +280,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
             label: Text(kIsWeb ? 'Send Test Browser Notification' : 'Send Test Alert Notification'),
           ),
 
-          const SizedBox(height: 28),
-
-          Text(
-            'Backend Server Configuration',
-            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Node.js 22 server endpoint providing official FDA, CMS NADAC, and RxNorm feeds.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _urlController,
-            decoration: InputDecoration(
-              labelText: 'Server Base URL',
-              hintText: 'http://localhost:3000',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              prefixIcon: const Icon(Icons.dns_outlined),
+          if (kDebugMode) ...[
+            const SizedBox(height: 28),
+            Text(
+              'Backend Server Configuration (Debug Only)',
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              OutlinedButton.icon(
-                onPressed: _isTesting ? null : _testConnection,
-                icon: _isTesting
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.wifi_tethering),
-                label: const Text('Test Connection'),
-              ),
-              const SizedBox(width: 12),
-              ElevatedButton(
-                onPressed: _saveUrl,
-                child: const Text('Save URL'),
-              ),
-            ],
-          ),
-
-          if (_pingSuccess != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Node.js 22 server endpoint providing official FDA, CMS NADAC, and RxNorm feeds.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: _pingSuccess! ? Colors.green.shade50 : Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _pingSuccess! ? Colors.green.shade300 : Colors.red.shade300,
+            TextField(
+              controller: _urlController,
+              decoration: InputDecoration(
+                labelText: 'Server Base URL',
+                hintText: 'http://localhost:3000',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                prefixIcon: const Icon(Icons.dns_outlined),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _isTesting ? null : _testConnection,
+                  icon: _isTesting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.wifi_tethering),
+                  label: const Text('Test Connection'),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _saveUrl,
+                  child: const Text('Save URL'),
+                ),
+              ],
+            ),
+            if (_pingSuccess != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _pingSuccess! ? Colors.green.shade50 : Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _pingSuccess! ? Colors.green.shade300 : Colors.red.shade300,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _pingSuccess! ? Icons.check_circle : Icons.error,
+                      size: 16,
+                      color: _pingSuccess! ? Colors.green.shade700 : Colors.red.shade700,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _pingSuccess!
+                          ? 'Server is online and healthy!'
+                          : 'Could not connect. Verify server is running.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _pingSuccess! ? Colors.green.shade900 : Colors.red.shade900,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    _pingSuccess! ? Icons.check_circle : Icons.error,
-                    size: 16,
-                    color: _pingSuccess! ? Colors.green.shade700 : Colors.red.shade700,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _pingSuccess!
-                        ? 'Server is online and healthy!'
-                        : 'Could not connect. Verify server is running.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: _pingSuccess! ? Colors.green.shade900 : Colors.red.shade900,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            ],
           ],
           const SizedBox(height: 28),
 

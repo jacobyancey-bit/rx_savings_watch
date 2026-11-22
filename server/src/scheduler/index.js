@@ -1,4 +1,4 @@
-const { runAllIngestions, ingestFdaShortages, ingestCmsNadac } = require('../ingestion');
+const { runAllIngestions, ingestFdaShortages, ingestCmsNadac, recordIngestionRun } = require('../ingestion');
 const { discoverAndIngestDrug, ingestLiveShortages } = require('../ingestion/live_feeds');
 const { GenericLaunchDetector } = require('../detector');
 const { broadcastPublicAlert } = require('../services/webPush');
@@ -126,7 +126,10 @@ class IngestionScheduler {
    * before users ever report them, and broadcasting genuine new generic launches.
    */
   async runRollingLiveAudit(options = {}) {
-    if (process.env.NODE_ENV === 'test') {
+    const discoverFn = options.discoverFn || discoverAndIngestDrug;
+    const shortagesFn = options.shortagesFn || ingestLiveShortages;
+
+    if (process.env.NODE_ENV === 'test' && !options.discoverFn) {
       return { skipped: true, reason: 'Disabled in offline test mode' };
     }
     if (this.isCycleRunning) {
@@ -136,31 +139,51 @@ class IngestionScheduler {
 
     const batchSize = options.batchSize || this.rollingAuditBatchSize;
     const delayMs = options.delayMs ?? 500;
+    const minAgeHours = options.minAgeHours ?? 12;
     let refreshed = 0;
     let newlyLaunched = 0;
     let anomaliesCorrected = 0;
     let errors = 0;
+    const auditedRxcuis = [];
 
     try {
+      // Only select prescriptions that haven't been verified within the last `minAgeHours`
+      // (ordered oldest-first so every drug in the DB rotates evenly with zero redundant polling).
       const oldestDrugs = this.db.prepare(`
         SELECT id, rxcui, brand_name, generic_name, updated_at
         FROM drugs
-        ORDER BY updated_at ASC
+        WHERE updated_at IS NULL
+           OR updated_at <= datetime('now', ?)
+        ORDER BY COALESCE(updated_at, '1970-01-01 00:00:00') ASC, id ASC
         LIMIT ?
-      `).all(batchSize);
+      `).all(`-${minAgeHours} hours`, batchSize);
 
       if (oldestDrugs.length === 0) {
-        return { refreshed: 0, newlyLaunched: 0, anomaliesCorrected: 0, errors: 0 };
+        return {
+          refreshed: 0,
+          newlyLaunched: 0,
+          anomaliesCorrected: 0,
+          errors: 0,
+          auditedRxcuis: [],
+        };
       }
+
+      const touchDrugStmt = this.db.prepare(
+        "UPDATE drugs SET updated_at = datetime('now') WHERE id = ?"
+      );
 
       console.log(`[Rolling Audit ${new Date().toISOString()}] Re-verifying ${oldestDrugs.length} oldest prescription(s) against live FDA/RxNorm/CMS feeds...`);
 
       for (let i = 0; i < oldestDrugs.length; i++) {
         const drug = oldestDrugs[i];
         const query = drug.brand_name || drug.generic_name;
+        auditedRxcuis.push(drug.rxcui);
         try {
           const beforeEval = this.detector.evaluateDrug(drug, { persistAlert: false });
-          const updated = await discoverAndIngestDrug(this.db, query, { forceRefresh: true });
+          const updated = await discoverFn(this.db, query, { forceRefresh: true });
+          // Always advance updated_at so a drug that fails or returns null never gets stuck at the front of the queue
+          touchDrugStmt.run(drug.id);
+
           if (updated) {
             refreshed++;
             const afterEval = this.detector.evaluateDrug(updated, { persistAlert: true });
@@ -168,13 +191,15 @@ class IngestionScheduler {
             if (!beforeEval.launch_detected && afterEval.launch_detected) {
               newlyLaunched++;
               console.log(`[Rolling Audit] NEW commercial generic launch confirmed: ${updated.brand_name || updated.generic_name}`);
-              broadcastPublicAlert(this.db, {
-                type: 'generic_launch',
-                rxcui: updated.rxcui,
-                brand_name: updated.brand_name || updated.generic_name,
-                generic_name: updated.generic_name,
-                savings_pct: afterEval.savings?.savingsPct ?? null,
-              }).catch(err => console.error('[Rolling Audit] Web Push error:', err.message));
+              if (process.env.NODE_ENV !== 'test' && !options.discoverFn) {
+                broadcastPublicAlert(this.db, {
+                  type: 'generic_launch',
+                  rxcui: updated.rxcui,
+                  brand_name: updated.brand_name || updated.generic_name,
+                  generic_name: updated.generic_name,
+                  savings_pct: afterEval.savings?.savingsPct ?? null,
+                }).catch(err => console.error('[Rolling Audit] Web Push error:', err.message));
+              }
             } else if (beforeEval.launch_detected && !afterEval.launch_detected) {
               anomaliesCorrected++;
               console.log(`[Rolling Audit] Self-corrected status to Brand Only: ${updated.brand_name || updated.generic_name}`);
@@ -182,6 +207,7 @@ class IngestionScheduler {
           }
         } catch (err) {
           errors++;
+          touchDrugStmt.run(drug.id);
           console.error(`[Rolling Audit] Error verifying ${query}:`, err.message);
         }
 
@@ -191,18 +217,21 @@ class IngestionScheduler {
       }
 
       // Also refresh live FDA Drug Shortages once per audit cycle
-      await ingestLiveShortages(this.db).catch(err => {
+      await shortagesFn(this.db).catch(err => {
         console.error('[Rolling Audit] Live shortages refresh error:', err.message);
       });
 
       this.lastSyncTimes.rollingAudit = new Date().toISOString();
-      this.db.prepare(`
-        INSERT INTO ingestion_runs (source, status, records_processed, anomalies_rejected, started_at, finished_at)
-        VALUES ('rolling_live_audit', ?, ?, ?, datetime('now'), datetime('now'))
-      `).run(errors === 0 ? 'success' : 'partial', refreshed, anomaliesCorrected);
+      recordIngestionRun(this.db, {
+        feedName: 'rolling_live_audit',
+        status: errors === 0 ? 'success' : 'partial',
+        recordsProcessed: refreshed,
+        anomaliesRejected: anomaliesCorrected,
+        notes: `audited=${oldestDrugs.length}, launches=${newlyLaunched}, corrected=${anomaliesCorrected}, errors=${errors}`,
+      });
 
       console.log(`[Rolling Audit] Complete: ${refreshed}/${oldestDrugs.length} refreshed, ${newlyLaunched} new launches, ${anomaliesCorrected} self-corrected, ${errors} errors.`);
-      return { refreshed, newlyLaunched, anomaliesCorrected, errors };
+      return { refreshed, newlyLaunched, anomaliesCorrected, errors, auditedRxcuis };
     } finally {
       this.isCycleRunning = false;
     }

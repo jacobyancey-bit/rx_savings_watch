@@ -110,57 +110,83 @@ async function fetchDrugsAtFda(genericName, brandName, drugType = 'small_molecul
       `https://api.fda.gov/drug/drugsfda.json?search=products.brand_name:${bTerm}+OR+openfda.brand_name:${bTerm}&limit=10`
     );
     const brandResults = brandData?.results || [];
-    const refNda = brandResults.find(a => (a.application_number || '').startsWith('NDA'));
+    const ndaCandidates = brandResults.filter(a => (a.application_number || '').startsWith('NDA'));
+
+    // When a brand has multiple NDAs (e.g. Lyrica capsules AB vs Lyrica oral solution),
+    // prefer an exact-brand NDA that carries an active FDA TE code.
+    const brandLower = brandName.toLowerCase();
+    const getActiveTeCodes = (nda) => {
+      const refProds = (nda.products || []).filter(
+        p => (p.marketing_status || '').toLowerCase() !== 'discontinued'
+      );
+      const prods = refProds.length > 0 ? refProds : (nda.products || []);
+      return [...new Set(prods.map(p => p.te_code).filter(Boolean))];
+    };
+    const isExactBrandNda = (nda) =>
+      (nda.products || []).some(p => (p.brand_name || '').toLowerCase() === brandLower);
+
+    const refNda =
+      ndaCandidates.find(a => isExactBrandNda(a) && getActiveTeCodes(a).length > 0) ||
+      ndaCandidates.find(a => getActiveTeCodes(a).length > 0) ||
+      ndaCandidates.find(a => isExactBrandNda(a)) ||
+      ndaCandidates[0];
 
     if (refNda) {
       const refProducts = (refNda.products || []).filter(
         p => (p.marketing_status || '').toLowerCase() !== 'discontinued'
       );
+      const isEntireBrandDiscontinued = refProducts.length === 0;
       const activeProducts = refProducts.length > 0 ? refProducts : (refNda.products || []);
       const teCodes = [...new Set(activeProducts.map(p => p.te_code).filter(Boolean))];
       const refDosageForms = [...new Set(activeProducts.map(p => p.dosage_form).filter(Boolean))];
       const substances = refNda.openfda?.substance_name || [];
 
-      // FDA Orange Book Rule: No TE code on the reference brand NDA => BRAND ONLY (no equivalent generic!)
-      if (teCodes.length === 0) {
+      // FDA Orange Book Rule:
+      // - If the reference brand NDA is ACTIVELY marketed and has NO TE code (e.g. Jornay PM, Ozempic, Jardiance),
+      //   ZERO therapeutically equivalent generics exist -> return strictly [refNda] (Brand Name Only).
+      // - If the entire reference brand NDA is DISCONTINUED (e.g. Glucophage, Prinivil, Prilosec), FDA removes
+      //   the brand's TE code when moving it to the Discontinued Section, so fall through to Step B to fetch active generic ANDAs.
+      if (teCodes.length === 0 && !isEntireBrandDiscontinued) {
         return [refNda];
       }
 
-      // Reference NDA HAS a TE code (e.g. AB, AB1, AB2, AP) -> fetch ONLY matching-TE ANDAs!
-      let results = [refNda];
-      const teCode = teCodes[0];
-      const formClause = refDosageForms[0]
-        ? `+AND+products.dosage_form:${encodeURIComponent(`"${refDosageForms[0]}"`)}`
-        : '';
-      const teClause = `+AND+products.te_code:${encodeURIComponent(`"${teCode}"`)}`;
+      if (teCodes.length > 0) {
+        // Reference NDA HAS a TE code (e.g. AB, AB1, AB2, AP) -> fetch ONLY matching-TE ANDAs!
+        let results = [refNda];
+        const teCode = teCodes[0];
+        const formClause = refDosageForms[0]
+          ? `+AND+products.dosage_form:${encodeURIComponent(`"${refDosageForms[0]}"`)}`
+          : '';
+        const teClause = `+AND+products.te_code:${encodeURIComponent(`"${teCode}"`)}`;
 
-      if (substances.length > 0) {
-        const subQuery = encodeURIComponent(`"${substances[0]}"`);
-        const matched = await fetchJsonSafe(
-          `https://api.fda.gov/drug/drugsfda.json?search=openfda.substance_name:${subQuery}${formClause}${teClause}&limit=25`
-        );
-        if (matched?.results?.length) {
-          results = [...results, ...matched.results];
+        if (substances.length > 0) {
+          const subQuery = encodeURIComponent(`"${substances[0]}"`);
+          const matched = await fetchJsonSafe(
+            `https://api.fda.gov/drug/drugsfda.json?search=openfda.substance_name:${subQuery}${formClause}${teClause}&limit=25`
+          );
+          if (matched?.results?.length) {
+            results = [...results, ...matched.results];
+          }
         }
-      }
 
-      // Fallback if substance_name query missed (e.g. generic_name exact match with matching TE code)
-      if (!results.some(a => (a.application_number || '').startsWith('ANDA'))) {
-        const gTerm = encodeURIComponent(`"${genericName}"`);
-        const matched2 = await fetchJsonSafe(
-          `https://api.fda.gov/drug/drugsfda.json?search=openfda.generic_name:${gTerm}${teClause}&limit=25`
-        );
-        if (matched2?.results?.length) {
-          results = [...results, ...matched2.results];
+        // Fallback if substance_name query missed (e.g. generic_name exact match with matching TE code)
+        if (!results.some(a => (a.application_number || '').startsWith('ANDA'))) {
+          const gTerm = encodeURIComponent(`"${genericName}"`);
+          const matched2 = await fetchJsonSafe(
+            `https://api.fda.gov/drug/drugsfda.json?search=openfda.generic_name:${gTerm}${teClause}&limit=25`
+          );
+          if (matched2?.results?.length) {
+            results = [...results, ...matched2.results];
+          }
         }
-      }
 
-      const seen = new Set();
-      return results.filter(a => {
-        if (!a.application_number || seen.has(a.application_number)) return false;
-        seen.add(a.application_number);
-        return true;
-      });
+        const seen = new Set();
+        return results.filter(a => {
+          if (!a.application_number || seen.has(a.application_number)) return false;
+          seen.add(a.application_number);
+          return true;
+        });
+      }
     }
   }
 
@@ -384,18 +410,40 @@ async function ingestLiveDrug(db, seed) {
     regulatoryCount++;
   }
 
+  // Detect patent-litigation-delayed generics (e.g., Eliquis):
+  // If CMS NADAC actively tracks the Brand (B) but has ZERO Generic (G) pharmacy acquisition rows,
+  // and OpenFDA only shows a handful of pre-registered ANDA NDCs (not yet dispensed at retail),
+  // do NOT mark those pre-registered ANDA NDCs as commercially launched!
+  const hasBrandNadac = [...nadacGenericRows, ...nadacBrandRows].some(
+    r => r.classification_for_rate_setting === 'B' && Number.parseFloat(r.nadac_per_unit) > 0
+  );
+  const hasGenericNadac = [...nadacGenericRows, ...nadacBrandRows].some(
+    r => r.classification_for_rate_setting === 'G' && Number.parseFloat(r.nadac_per_unit) > 0
+  );
+  const distinctAndaLabelers = new Set(
+    ndcRows
+      .filter(r => {
+        const c = (r.marketing_category || '').toUpperCase();
+        return c.includes('ANDA') || c.includes('AUTHORIZED GENERIC');
+      })
+      .map(r => (r.labeler_name || '').toLowerCase().trim())
+      .filter(Boolean)
+  );
+  const patentDelayedPreRegistration =
+    hasBrandNadac && !hasGenericNadac && distinctAndaLabelers.size < 4;
+
   // Step 3: Persist OpenFDA NDC Directory (finished commercial products with expiration dates)
   const upsertNdc = db.prepare(`
     INSERT INTO market_availability (
       drug_id, source, ndc, labeler_name, marketing_category,
       marketing_start_date, marketing_end_date, is_commercialized, package_description, updated_at
-    ) VALUES (?, 'openfda_ndc', ?, ?, ?, ?, ?, 1, ?, datetime('now'))
+    ) VALUES (?, 'openfda_ndc', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(drug_id, ndc, source) DO UPDATE SET
       labeler_name = excluded.labeler_name,
       marketing_category = excluded.marketing_category,
       marketing_start_date = COALESCE(excluded.marketing_start_date, market_availability.marketing_start_date),
       marketing_end_date = excluded.marketing_end_date,
-      is_commercialized = 1,
+      is_commercialized = excluded.is_commercialized,
       package_description = excluded.package_description,
       updated_at = datetime('now')
   `);
@@ -429,6 +477,11 @@ async function ingestLiveDrug(db, seed) {
       regulatoryCount++;
     }
 
+    const isCommercialFlag =
+      (normCat === 'ANDA' || normCat === 'AUTHORIZED_GENERIC') && patentDelayedPreRegistration
+        ? 0
+        : 1;
+
     upsertNdc.run(
       drugId,
       ndc,
@@ -436,6 +489,7 @@ async function ingestLiveDrug(db, seed) {
       normCat,
       formatFdaDate(item.marketing_start_date),
       formatFdaDate(item.marketing_expiration_date),
+      isCommercialFlag,
       item.packaging?.[0]?.description || item.brand_name || null
     );
     ndcCount++;
@@ -717,6 +771,31 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
     );
   }
 
+  // Fallback 2: Discontinued legacy brand names (e.g., Glucophage -> metformin, Prinivil -> lisinopril, Flomax -> tamsulosin)
+  // Resolve the legacy brand via RxNav rxcui -> ingredient (IN), then pull active generic NDCs!
+  let legacyBrandAlias = null;
+  if (!ndcData?.results?.length) {
+    const rxcuiLookup = await fetchJsonSafe(
+      `https://rxnav.nlm.nih.gov/REST/rxcui.json?name=${encodeURIComponent(clean)}&search=2`
+    );
+    const candidateId = rxcuiLookup?.idGroup?.rxnormId?.[0];
+    if (candidateId) {
+      const ingNames = await fetchRxNormIngredients(candidateId);
+      if (ingNames.length > 0) {
+        legacyBrandAlias = toTitleCase(clean);
+        const ingTerm = encodeURIComponent(`"${ingNames[0]}"`);
+        ndcData = await fetchJsonSafe(
+          `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+generic_name:${ingTerm}&limit=100`
+        );
+        if (!rxData?.drugGroup?.conceptGroup?.length) {
+          rxData = await fetchJsonSafe(
+            `https://rxnav.nlm.nih.gov/REST/drugs.json?name=${encodeURIComponent(ingNames[0])}`
+          );
+        }
+      }
+    }
+  }
+
   const results = ndcData?.results || [];
   if (results.length === 0) return null;
 
@@ -724,15 +803,32 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
     .filter(g => g.tty === 'SBD' || g.tty === 'SCD')
     .flatMap(g => g.conceptProperties || []);
 
-  // Pick the best canonical match (prefer NDA/BLA reference brand if present)
+  // Pick the best canonical match:
+  // 1. Prefer exact brand match + Prescription NDA/BLA (avoiding OTC variants like "Prilosec Otc")
+  // 2. If user searched an exact single-ingredient generic name (e.g. "Omeprazole"), prefer exact generic
+  //    match so we NEVER hijack it with a multi-ingredient combo NDA like "Talicia" (omeprazole+amoxicillin+rifabutin)!
+  const cleanLower = clean.toLowerCase();
+  const isRx = (r) => (r.product_type || '').toUpperCase().includes('PRESCRIPTION');
+  const isNdaOrBla = (r) => r.marketing_category === 'NDA' || r.marketing_category === 'BLA';
+  const isExactBrand = (r) => (r.brand_name || '').trim().toLowerCase() === cleanLower;
+  const isExactGeneric = (r) => (r.generic_name || '').trim().toLowerCase() === cleanLower;
+
   const primary =
-    results.find(r => r.marketing_category === 'NDA' || r.marketing_category === 'BLA') ||
+    results.find(r => isRx(r) && isNdaOrBla(r) && isExactBrand(r)) ||
+    results.find(r => isRx(r) && isExactGeneric(r) && isNdaOrBla(r)) ||
+    results.find(r => isRx(r) && isExactGeneric(r)) ||
+    results.find(r => isRx(r) && isNdaOrBla(r)) ||
+    results.find(r => isRx(r) && isExactBrand(r)) ||
+    results.find(r => isNdaOrBla(r)) ||
     results[0];
 
   const canonicalGeneric = (primary.generic_name || '').trim().toLowerCase();
   if (!canonicalGeneric) return null;
 
-  const canonicalBrand = primary.brand_name ? toTitleCase(primary.brand_name.trim()) : null;
+  // For pure generic ANDA searches (where brand_name === generic_name), keep brand_name null
+  const rawBrand = primary.brand_name ? primary.brand_name.trim() : null;
+  const isUnbrandedGeneric = !legacyBrandAlias && rawBrand && rawBrand.toLowerCase() === canonicalGeneric;
+  const canonicalBrand = legacyBrandAlias || (isUnbrandedGeneric ? null : (rawBrand ? toTitleCase(rawBrand) : null));
   const drugType = (primary.marketing_category || '').includes('BLA') ? 'biologic' : 'small_molecule';
   const dosageForm = primary.dosage_form ? primary.dosage_form.toLowerCase() : null;
 

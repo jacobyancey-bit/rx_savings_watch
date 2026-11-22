@@ -35,7 +35,7 @@ test('Scheduler: start and stop daemon timers', () => {
   assert.equal(scheduler.isRunning, false);
   scheduler.start();
   assert.equal(scheduler.isRunning, true);
-  assert.equal(scheduler.timers.length, 2);
+  assert.equal(scheduler.timers.length, 3);
 
   scheduler.stop();
   assert.equal(scheduler.isRunning, false);

@@ -3,16 +3,19 @@ const path = require('node:path');
 const config = require('./config');
 const { getDb, initSchema } = require('./db');
 const { createApp } = require('./app');
-const { runLiveIngestion, discoverAndIngestDrug } = require('./ingestion/live_feeds');
+const { runLiveIngestion } = require('./ingestion/live_feeds');
 const { GenericLaunchDetector } = require('./detector');
+const { IngestionScheduler } = require('./scheduler');
 
 const db = getDb();
 initSchema(db);
 
-const app = createApp(db);
+const scheduler = new IngestionScheduler(db);
+const app = createApp(db, { scheduler });
 
 const server = app.listen(config.PORT, () => {
   console.log(`rx_savings_watch server running on port ${config.PORT}`);
+  scheduler.start();
 
   // Auto-seed on first boot when mounted onto a fresh persistent volume
   try {
@@ -35,27 +38,22 @@ const server = app.listen(config.PORT, () => {
           .catch(err => console.error('[Boot] Live auto-seed error:', err.message));
       }
     } else {
-      // Refresh any previously cached multi-salt drugs (e.g. Mydayis) that missed their ANDAs/strengths
-      const multiSaltDrugs = db.prepare(`
-        SELECT d.id, d.brand_name, d.generic_name
-        FROM drugs d
-        WHERE d.generic_name LIKE '%,%'
-          AND NOT EXISTS (
-            SELECT 1 FROM generic_status gs WHERE gs.drug_id = d.id AND gs.is_approved_generic = 1
-          )
-      `).all();
-      if (multiSaltDrugs.length > 0) {
-        console.log(`[Boot] Refreshing ${multiSaltDrugs.length} multi-salt drug(s) for accurate generic ANDA & dosage matching...`);
-        (async () => {
-          for (const d of multiSaltDrugs) {
-            await discoverAndIngestDrug(db, d.brand_name || d.generic_name, { forceRefresh: true });
-          }
-        })().catch(err => console.error('[Boot] Multi-salt refresh error:', err.message));
-      }
+      // Kick off one gentle rolling audit 15s after boot so existing cached drugs
+      // immediately benefit from updated FDA/CMS accuracy rules
+      const bootAuditTimer = setTimeout(() => {
+        scheduler.runRollingLiveAudit({ batchSize: 15, delayMs: 500 })
+          .catch(err => console.error('[Boot] Rolling audit error:', err.message));
+      }, 15000);
+      bootAuditTimer.unref?.();
     }
   } catch (err) {
     console.error('[Boot] Database check error:', err.message);
   }
+});
+
+process.on('SIGTERM', () => {
+  scheduler.stop();
+  server.close();
 });
 
 module.exports = { app, server };

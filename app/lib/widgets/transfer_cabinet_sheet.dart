@@ -79,11 +79,44 @@ class _TransferCabinetSheetState extends State<TransferCabinetSheet> {
       MaterialPageRoute(builder: (_) => const QrTransferScannerScreen()),
     );
     if (scanned == null || scanned.trim().isEmpty || !mounted) return;
+
+    final rxcuis = CabinetTransferService.parseRxcuisFromInput(scanned);
+    if (rxcuis.isEmpty) {
+      setState(() {
+        _importSuccess = false;
+        _importFeedback = 'That QR code did not contain a valid Rx Savings Watch transfer list.';
+      });
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Import Prescriptions?'),
+        content: Text(
+          'Found ${rxcuis.length} prescription${rxcuis.length == 1 ? '' : 's'} in this QR code. '
+          'Would you like to import ${rxcuis.length == 1 ? 'it' : 'them'} into this device\'s cabinet?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
     _importController.text = scanned.trim();
-    await _handleImport();
+    await _handleImport(returnToHomeOnSuccess: true);
   }
 
-  Future<void> _handleImport() async {
+  Future<void> _handleImport({bool returnToHomeOnSuccess = true}) async {
     final raw = _importController.text.trim();
     final rxcuis = CabinetTransferService.parseRxcuisFromInput(raw);
     if (rxcuis.isEmpty) {
@@ -101,14 +134,32 @@ class _TransferCabinetSheetState extends State<TransferCabinetSheet> {
 
     try {
       final cabinet = context.read<CabinetProvider>();
+      final messenger = ScaffoldMessenger.of(context);
+      final navigator = Navigator.of(context);
       final addedCount = await cabinet.importRxcuis(rxcuis);
       if (!mounted) return;
+
+      final successMessage = addedCount > 0
+          ? 'Imported $addedCount prescription${addedCount == 1 ? '' : 's'} into your cabinet!'
+          : 'All ${rxcuis.length} prescription${rxcuis.length == 1 ? '' : 's'} were already in your cabinet.';
+
+      if (returnToHomeOnSuccess) {
+        navigator.popUntil((route) => route.isFirst);
+        messenger.clearSnackBars();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(successMessage),
+            backgroundColor: Colors.teal.shade700,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+
       setState(() {
         _isImporting = false;
         _importSuccess = true;
-        _importFeedback = addedCount > 0
-            ? 'Imported $addedCount new medication${addedCount == 1 ? '' : 's'} to this device!'
-            : 'All medications in that link are already in this device\'s cabinet.';
+        _importFeedback = successMessage;
       });
       if (addedCount > 0) {
         _importController.clear();

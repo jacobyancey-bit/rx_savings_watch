@@ -34,6 +34,25 @@ function createDrugsRouter(db) {
   const negativeCache = new Map(); // queryLower -> expiresAtMs
   const inFlightLookups = new Map(); // queryLower -> Promise<object|null>
   const ipDiscoveryBuckets = new Map(); // ip -> { count, resetAt }
+  const ipFlagBuckets = new Map(); // ip -> { count, resetAt }
+  const FLAG_MAX_PER_IP = 10;
+
+  function canSubmitFlagForIp(ip) {
+    const now = Date.now();
+    if (ipFlagBuckets.size > MAX_CACHE_ENTRIES) {
+      for (const [k, v] of ipFlagBuckets) {
+        if (v.resetAt <= now) ipFlagBuckets.delete(k);
+      }
+    }
+    const bucket = ipFlagBuckets.get(ip);
+    if (!bucket || bucket.resetAt <= now) {
+      ipFlagBuckets.set(ip, { count: 1, resetAt: now + config.RATE_LIMIT_WINDOW_MS });
+      return true;
+    }
+    if (bucket.count >= FLAG_MAX_PER_IP) return false;
+    bucket.count++;
+    return true;
+  }
 
   function canRunLiveDiscoveryForIp(ip) {
     const now = Date.now();
@@ -167,6 +186,14 @@ function createDrugsRouter(db) {
   `);
 
   router.post('/drugs/:rxcui/flag', (req, res) => {
+    const clientIp = req.ip || 'unknown';
+    if (!canSubmitFlagForIp(clientIp)) {
+      return res.status(429).json({
+        error: 'Too Many Requests',
+        message: 'Too many data flags submitted. Please try again later.'
+      });
+    }
+
     const rxcui = String(req.params.rxcui || '').trim();
     if (!RXCUI_PATTERN.test(rxcui)) {
       return res.status(400).json({ error: 'Bad Request', message: 'Invalid RxCUI format.' });

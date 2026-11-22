@@ -17,7 +17,13 @@ let cachedNadacDatasetId = null;
 
 async function fetchJsonSafe(url) {
   try {
-    const res = await fetch(url, {
+    let targetUrl = url;
+    const fdaKey = (process.env.OPENFDA_API_KEY || '').trim();
+    if (fdaKey && targetUrl.startsWith('https://api.fda.gov/')) {
+      const sep = targetUrl.includes('?') ? '&' : '?';
+      targetUrl = `${targetUrl}${sep}api_key=${encodeURIComponent(fdaKey)}`;
+    }
+    const res = await fetch(targetUrl, {
       headers: { 'User-Agent': 'RxSavingsWatch/1.0 (https://dangling-dice-studios.com)' },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -715,7 +721,14 @@ function extractCleanStrengths(ndcResults, rxConcepts = []) {
     }
 
     const combined = r.active_ingredients
-      .map(ai => (ai.strength || '').toLowerCase().replace(/\/1\b/g, '').trim())
+      .map(ai =>
+        (ai.strength || '')
+          .toLowerCase()
+          .replace(/\/1\b/g, '')
+          .replace(/(^|[\s\/])\.(\d)/g, '$10.$2')
+          .replace(/\s+/g, ' ')
+          .trim()
+      )
       .filter(Boolean)
       .join(' / ');
     if (combined) {
@@ -734,9 +747,16 @@ function extractCleanStrengths(ndcResults, rxConcepts = []) {
         continue;
       }
     }
-    const m = name.match(/\b(\d+(?:\.\d+)?\s*(?:MG|MCG|ML|G|%)(?:\s*\/\s*\d+(?:\.\d+)?\s*(?:ML|MG|ACTUAT))?)\b/i);
+    const m = name.match(/\b(\d*(?:\.\d+)?\s*(?:MG|MCG|ML|G|%)(?:\s*\/\s*\d*(?:\.\d+)?\s*(?:ML|MG|ACTUAT))?)\b/i);
     if (m) {
-      strengthSet.add(m[1].toLowerCase().replace(/\s+/g, ' ').trim());
+      const norm = m[1]
+        .toLowerCase()
+        .replace(/(^|[\s\/])\.(\d)/g, '$10.$2')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (/^\d/.test(norm)) {
+        strengthSet.add(norm);
+      }
     }
   }
 

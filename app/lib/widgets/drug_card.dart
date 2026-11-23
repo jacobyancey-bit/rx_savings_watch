@@ -115,9 +115,13 @@ class DrugCard extends StatelessWidget {
                 ],
 
                 // Plain-English generic prescription name & substitution guidance when available
-                if (drug.commercialGenericAvailable) ...[
+                if (drug.commercialGenericAvailable || drug.isUnbrandedGeneric) ...[
                   Text(
-                    'Ask for: ${drug.genericName}',
+                    drug.isUnbrandedGeneric
+                        ? (drug.referenceBrands.isNotEmpty
+                            ? 'Generic for: ${drug.referenceBrands.join(', ')}'
+                            : 'Already a Generic Medication')
+                        : 'Ask for: ${drug.genericName}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

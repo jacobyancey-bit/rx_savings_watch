@@ -1,4 +1,4 @@
-package com.danglingdicestudios.rx_savings_watch
+package com.danglingdicestudios.rx
 
 import io.flutter.embedding.android.FlutterActivity
 

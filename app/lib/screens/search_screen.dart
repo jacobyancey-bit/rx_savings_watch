@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../models/drug.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
-import '../services/bottle_scanner_service.dart';
 import '../widgets/add_supplement_sheet.dart';
 import 'drug_detail_screen.dart';
 
@@ -17,13 +16,12 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _controller = TextEditingController();
-  final BottleScannerService _scannerService = BottleScannerService();
   Timer? _debounce;
   List<Drug> _allCatalogDrugs = [];
   List<Drug> _filteredDrugs = [];
   bool _isLoading = true;
   bool _isLiveSearching = false;
-  bool _isScanningBottle = false;
+  int _liveSearchSeq = 0;
   String? _liveSearchNote;
   String? _errorMessage;
 
@@ -93,7 +91,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
     // If no local match and user typed at least 3 chars, auto-search official FDA/RxNorm databases after a short pause
     if (localMatches.isEmpty && query.length >= 3) {
-      _debounce = Timer(const Duration(milliseconds: 700), () {
+      _debounce = Timer(const Duration(milliseconds: 900), () {
         _searchLiveFederalDatabases(query);
       });
     }
@@ -104,8 +102,13 @@ class _SearchScreenState extends State<SearchScreen> {
     bool autoOpenFirst = false,
     String? autoOpenStrength,
   }) async {
+    _debounce?.cancel();
     final trimmed = query.trim();
-    if (trimmed.length < 3 || _isLiveSearching) return;
+    if (trimmed.length < 3) return;
+
+    // Track request sequence so a newer full-word search (e.g. "pramipexole")
+    // is NEVER dropped while an earlier partial-word search (e.g. "pram") is still in flight.
+    final reqId = ++_liveSearchSeq;
 
     setState(() {
       _isLiveSearching = true;
@@ -117,7 +120,7 @@ class _SearchScreenState extends State<SearchScreen> {
       final api = ApiService(baseUrl: provider.serverUrl);
       final results = await api.getDrugs(query: trimmed, limit: 25);
 
-      if (!mounted) return;
+      if (!mounted || reqId != _liveSearchSeq) return;
       if (results.isNotEmpty) {
         // Merge newly discovered canonical drug(s) into local catalog list without duplicates
         final updatedCatalog = List<Drug>.from(_allCatalogDrugs);
@@ -152,182 +155,12 @@ class _SearchScreenState extends State<SearchScreen> {
         });
       }
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || reqId != _liveSearchSeq) return;
       setState(() {
         _isLiveSearching = false;
         _liveSearchNote = 'Could not reach official databases right now. Please try again.';
       });
     }
-  }
-
-  Future<void> _scanPillBottle() async {
-    if (_isScanningBottle) return;
-    setState(() => _isScanningBottle = true);
-
-    try {
-      final result = await _scannerService.scanBottleAndDeletePhoto(_allCatalogDrugs);
-      if (!mounted) return;
-
-      if (result == null) {
-        // User canceled camera
-        setState(() => _isScanningBottle = false);
-        return;
-      }
-
-      final strengthLabel = result.detectedStrength != null ? ' (${result.detectedStrength})' : '';
-
-      // If the scanned generic abbreviation maps to multiple distinct FDA brand formulations
-      // (e.g., AMPHET/DEXTR 25 mg -> Mydayis vs Adderall XR), let the user pick in 1 tap.
-      if (result.ambiguousCandidates.length > 1) {
-        setState(() => _isScanningBottle = false);
-        final chosen = await _showFormulationChoiceSheet(
-          result.ambiguousCandidates,
-          result.detectedStrength,
-        );
-        if (chosen == null || !mounted) return;
-
-        final catalogMatch = _allCatalogDrugs.where(
-          (d) => (d.brandName ?? '').toLowerCase() == chosen.toLowerCase(),
-        );
-        if (catalogMatch.isNotEmpty) {
-          final drug = catalogMatch.first;
-          _controller.text = drug.displayName;
-          setState(() => _filteredDrugs = [drug]);
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => DrugDetailScreen(
-                drug: drug,
-                initialStrength: result.detectedStrength,
-              ),
-            ),
-          );
-        } else {
-          _controller.text = chosen;
-          await _searchLiveFederalDatabases(
-            chosen,
-            autoOpenFirst: true,
-            autoOpenStrength: result.detectedStrength,
-          );
-        }
-        return;
-      }
-
-      if (result.matchedCatalogDrug != null) {
-        final drug = result.matchedCatalogDrug!;
-        _controller.text = drug.displayName;
-        setState(() {
-          _filteredDrugs = [drug];
-          _isScanningBottle = false;
-          _liveSearchNote = 'Photo deleted. Opened "${drug.displayName}$strengthLabel" from label.';
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Photo deleted — opened ${drug.displayName}$strengthLabel')),
-        );
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => DrugDetailScreen(
-              drug: drug,
-              initialStrength: result.detectedStrength,
-            ),
-          ),
-        );
-      } else if (result.queryTerm != null && result.queryTerm!.isNotEmpty) {
-        final term = result.queryTerm!;
-        _controller.text = term;
-        setState(() {
-          _isScanningBottle = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Photo deleted — opening "$term$strengthLabel" from FDA database')),
-        );
-        await _searchLiveFederalDatabases(
-          term,
-          autoOpenFirst: true,
-          autoOpenStrength: result.detectedStrength,
-        );
-      } else {
-        setState(() {
-          _isScanningBottle = false;
-          _liveSearchNote = 'Photo immediately deleted. Could not read a medication name — try holding the bottle closer or typing the name above.';
-        });
-      }
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _isScanningBottle = false;
-        _liveSearchNote = 'Could not open camera. Please check camera permission or type the medication name.';
-      });
-    }
-  }
-
-  Future<String?> _showFormulationChoiceSheet(
-    List<String> candidates,
-    String? detectedStrength,
-  ) {
-    final strengthNote = detectedStrength != null ? ' ($detectedStrength)' : '';
-    return showModalBottomSheet<String>(
-      context: context,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 38,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 14),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Text(
-                'Which formulation is on your bottle?',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Your label shares the same active ingredient$strengthNote across more than one brand formulation. Pick yours to see exact generic & savings details:',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 16),
-              ...candidates.map((name) {
-                final subtitle = switch (name.toLowerCase()) {
-                  'mydayis' => 'Triple-bead 16-hr ER • Strengths: 12.5, 25, 37.5, 50 mg',
-                  'adderall xr' => 'Double-bead 12-hr ER • Strengths: 5, 10, 15, 20, 25, 30 mg',
-                  _ => 'Tap to view exact generic status & savings',
-                };
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: ListTile(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: BorderSide(color: theme.colorScheme.outlineVariant),
-                    ),
-                    leading: Icon(Icons.medication_outlined, color: theme.colorScheme.primary),
-                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(subtitle, style: const TextStyle(fontSize: 12.5)),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.of(ctx).pop(name),
-                  ),
-                );
-              }),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   @override
@@ -372,30 +205,6 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
           ),
-          if (BottleScannerService.isSupported)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-              child: SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: FilledButton.tonalIcon(
-                  onPressed: _isScanningBottle ? null : _scanPillBottle,
-                  icon: _isScanningBottle
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.camera_alt_outlined),
-                  label: Text(
-                    _isScanningBottle
-                        ? 'Reading label & deleting photo...'
-                        : 'Scan Pill Bottle (Photo Auto-Deleted)',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: SizedBox(

@@ -15,7 +15,7 @@ class PartnerLinks {
   // Official legal & studio contact URLs
   static const String studioWebsiteUrl = 'https://dangling-dice-studios.com/';
   static const String supportDiscordUrl = 'https://discord.gg/uFYMQahNZz';
-  static const String supportEmail = ''; // Optional public support email (e.g. 'support@dangling-dice-studios.com')
+  static const String supportEmail = 'support@danglingdicestudios.com';
   static const String privacyPolicyUrl = 'https://dangling-dice-studios.com/rx-savings-watch/privacy.html';
   static const String termsOfServiceUrl = 'https://dangling-dice-studios.com/rx-savings-watch/terms.html';
 

@@ -1,5 +1,30 @@
+import 'dart:convert';
 import 'pricing_info.dart';
 import 'alert_event.dart';
+
+class DosageFormOption {
+  final String form;
+  final List<String> strengths;
+
+  const DosageFormOption({
+    required this.form,
+    required this.strengths,
+  });
+
+  factory DosageFormOption.fromJson(Map<String, dynamic> json) {
+    return DosageFormOption(
+      form: (json['form'] ?? 'Oral').toString(),
+      strengths: json['strengths'] is List
+          ? List<String>.from((json['strengths'] as List).map((e) => e.toString()))
+          : const [],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'form': form,
+        'strengths': strengths,
+      };
+}
 
 class Drug {
   final String rxcui;
@@ -8,6 +33,8 @@ class Drug {
   final String? activeIngredient;
   final String? dosageForm;
   final String? strength;
+  final List<DosageFormOption> dosageOptions;
+  final List<String> referenceBrands;
   final String? route;
   final String drugType; // 'small_molecule' or 'biologic'
   
@@ -33,6 +60,8 @@ class Drug {
     this.activeIngredient,
     this.dosageForm,
     this.strength,
+    this.dosageOptions = const [],
+    this.referenceBrands = const [],
     this.route,
     this.drugType = 'small_molecule',
     this.hasApprovedGeneric = false,
@@ -52,7 +81,20 @@ class Drug {
 
   bool get isAutoSubstitutable => substitutionStatus == 'auto_substitutable';
 
+  /// True when the user is viewing an unbranded generic entry directly (e.g. propranolol, tamsulosin)
+  /// rather than a branded medication (e.g. Flomax, Lipitor).
+  bool get isUnbrandedGeneric =>
+      brandName == null ||
+      brandName!.trim().isEmpty ||
+      brandName!.trim().toLowerCase() == genericName.trim().toLowerCase();
+
   String get substitutionPlainGuidance {
+    if (isUnbrandedGeneric) {
+      if (referenceBrands.isNotEmpty) {
+        return 'You are already viewing the generic version of ${referenceBrands.join(', ')}.';
+      }
+      return 'You are already viewing the FDA-approved generic medication.';
+    }
     if (!commercialGenericAvailable) {
       return hasApprovedGeneric
           ? 'FDA approved, but not yet widely stocked at pharmacies.'
@@ -82,6 +124,77 @@ class Drug {
         .toList();
   }
 
+  /// Groups available strengths cleanly by exact FDA Dosage Form when provided by the server
+  /// (e.g. Oral Tablet, Extended-Release Capsule, Oral Solution, Injectable), falling back to
+  /// unit/form classification for legacy cached records.
+  Map<String, List<String>> get groupedStrengthsByRoute {
+    if (dosageOptions.isNotEmpty) {
+      final exact = <String, List<String>>{};
+      for (final opt in dosageOptions) {
+        if (opt.strengths.isNotEmpty) {
+          exact[opt.form] = opt.strengths;
+        }
+      }
+      if (exact.isNotEmpty) return exact;
+    }
+
+    final strengths = availableStrengths;
+    if (strengths.isEmpty) return const {};
+
+    final formLower = '${dosageForm ?? ''} ${route ?? ''}'.toLowerCase();
+    final isTopicalForm = RegExp(r'cream|oint|gel|lotion|patch|topical|transdermal|foam|shampoo').hasMatch(formLower);
+    final isInhalerForm = RegExp(r'inhal|aerosol|nebul|spray|diskus|ellipta').hasMatch(formLower);
+    final isEyeEarForm = RegExp(r'ophthalm|optic|eye|otic|ear').hasMatch(formLower);
+    final isInjectableForm = RegExp(r'inject|intraven|infus|syringe|vial|ampul|subcut|intramusc|auto-injector').hasMatch(formLower);
+
+    final grouped = <String, List<String>>{};
+    for (final s in strengths) {
+      final lower = s.toLowerCase();
+      String bucket;
+
+      if (lower.contains('actuat') || lower.contains('inh') || isInhalerForm) {
+        bucket = 'Inhaler / Spray';
+      } else if (isEyeEarForm) {
+        bucket = 'Eye / Ear Drops';
+      } else if (lower.contains('%') ||
+          RegExp(r'/\s*\d*(?:\.\d+)?\s*(?:g|gm)\b').hasMatch(lower) ||
+          lower.contains('24hr') ||
+          isTopicalForm) {
+        bucket = 'Topical';
+      } else if (RegExp(r'/\s*\d*(?:\.\d+)?\s*ml\b').hasMatch(lower) ||
+          RegExp(r'^\d+(?:\.\d+)?\s*ml$').hasMatch(lower)) {
+        bucket = isInjectableForm ? 'Injectable / Liquid' : 'Liquid / Injectable';
+      } else if (isInjectableForm && drugType == 'biologic') {
+        bucket = 'Injectable';
+      } else {
+        bucket = 'Oral (Pill / Capsule)';
+      }
+
+      grouped.putIfAbsent(bucket, () => <String>[]).add(s);
+    }
+
+    // Order buckets so Oral appears first when present (most common patient route)
+    const preferredOrder = [
+      'Oral (Pill / Capsule)',
+      'Injectable / Liquid',
+      'Liquid / Injectable',
+      'Injectable',
+      'Inhaler / Spray',
+      'Topical',
+      'Eye / Ear Drops',
+    ];
+    final ordered = <String, List<String>>{};
+    for (final key in preferredOrder) {
+      if (grouped.containsKey(key)) {
+        ordered[key] = grouped[key]!;
+      }
+    }
+    for (final entry in grouped.entries) {
+      ordered.putIfAbsent(entry.key, () => entry.value);
+    }
+    return ordered;
+  }
+
   String get subtitle {
     final parts = <String>[];
     if (brandName != null && brandName!.isNotEmpty && brandName!.toLowerCase() != genericName.toLowerCase()) {
@@ -99,6 +212,45 @@ class Drug {
     return parts.join(' • ');
   }
 
+  static List<DosageFormOption> _parseDosageOptions(dynamic raw) {
+    if (raw == null) return const [];
+    dynamic decoded = raw;
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        decoded = jsonDecode(raw);
+      } catch (_) {
+        return const [];
+      }
+    }
+    if (decoded is List) {
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map(DosageFormOption.fromJson)
+          .where((o) => o.strengths.isNotEmpty)
+          .toList();
+    }
+    return const [];
+  }
+
+  static List<String> _parseReferenceBrands(dynamic raw) {
+    if (raw == null) return const [];
+    dynamic decoded = raw;
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        decoded = jsonDecode(raw);
+      } catch (_) {
+        return const [];
+      }
+    }
+    if (decoded is List) {
+      return decoded
+          .map((e) => e.toString().trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    return const [];
+  }
+
   factory Drug.fromJson(Map<String, dynamic> json) {
     return Drug(
       rxcui: json['rxcui']?.toString() ?? '',
@@ -107,6 +259,8 @@ class Drug {
       activeIngredient: json['active_ingredient'] as String?,
       dosageForm: json['dosage_form'] as String?,
       strength: json['strength'] as String?,
+      dosageOptions: _parseDosageOptions(json['dosage_options']),
+      referenceBrands: _parseReferenceBrands(json['reference_brands']),
       route: json['route'] as String?,
       drugType: json['drug_type'] as String? ?? 'small_molecule',
       hasApprovedGeneric: json['has_approved_generic'] as bool? ?? false,
@@ -145,6 +299,8 @@ class Drug {
       'active_ingredient': activeIngredient,
       'dosage_form': dosageForm,
       'strength': strength,
+      'dosage_options': dosageOptions.map((o) => o.toJson()).toList(),
+      'reference_brands': referenceBrands,
       'route': route,
       'drug_type': drugType,
       'has_approved_generic': hasApprovedGeneric,
@@ -171,6 +327,12 @@ class Drug {
       activeIngredient: activeIngredient,
       dosageForm: updateJson['dosage_form'] as String? ?? dosageForm,
       strength: updateJson['strength'] as String? ?? strength,
+      dosageOptions: updateJson['dosage_options'] != null
+          ? _parseDosageOptions(updateJson['dosage_options'])
+          : dosageOptions,
+      referenceBrands: updateJson['reference_brands'] != null
+          ? _parseReferenceBrands(updateJson['reference_brands'])
+          : referenceBrands,
       route: route,
       drugType: updateJson['drug_type'] as String? ?? drugType,
       hasApprovedGeneric: updateJson['has_approved_generic'] as bool? ?? hasApprovedGeneric,

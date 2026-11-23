@@ -55,10 +55,9 @@ class HomeFooterSection extends StatelessWidget {
             const Divider(height: 1),
             _buildFaqTile(
               theme,
-              'Are my pill bottle photos or prescription lists ever uploaded?',
-              'Never. When you scan a prescription bottle, optical text recognition runs 100% locally on your device, '
-                  'all personal details (your name, doctor, Rx number, and pharmacy) are stripped immediately, and the photo '
-                  'is wiped from memory right away. Update checks also mix in decoy maintenance drug codes.',
+              'Are my prescription lists or reminders ever uploaded?',
+              'Never. Your medication cabinet and reminders stay 100% on your own device and never touch our servers. '
+                  'Anonymous update checks also mix in decoy maintenance drug codes so network traffic cannot reveal your prescriptions.',
             ),
             const Divider(height: 1),
             _buildFaqTile(
@@ -104,39 +103,34 @@ class HomeFooterSection extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Have a question, feedback, or spot a medication entry that needs review? Reach out through our studio website or Discord, or use the anonymous "See something wrong?" button on any medication page.',
+              'Have a question, feedback, or spot a medication entry that needs review? Reach out directly by email, or use the anonymous "See something wrong?" button on any medication page.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 height: 1.4,
               ),
             ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                FilledButton.tonalIcon(
-                  onPressed: () => _openUrl(PartnerLinks.studioWebsiteUrl),
-                  icon: const Icon(Icons.language, size: 18),
-                  label: const Text('Dangling Dice Studios'),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: () => _openUrl(PartnerLinks.supportDiscordUrl),
-                  icon: const Icon(Icons.forum_outlined, size: 18),
-                  label: const Text('Support Discord'),
-                ),
-                if (PartnerLinks.supportEmail.isNotEmpty)
-                  OutlinedButton.icon(
-                    onPressed: () => _openUrl(
-                      'mailto:${PartnerLinks.supportEmail}?subject=Rx%20Savings%20Watch%20Support',
-                    ),
-                    icon: const Icon(Icons.email_outlined, size: 18),
-                    label: const Text('Email Support'),
-                  ),
-              ],
+            FilledButton.tonalIcon(
+              onPressed: () => _openUrl(
+                'mailto:${PartnerLinks.supportEmail}?subject=Rx%20Savings%20Watch%20Support',
+              ),
+              icon: const Icon(Icons.email_outlined, size: 18),
+              label: const Text(PartnerLinks.supportEmail),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showPolicySnackBar(BuildContext context, String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
       ),
     );
   }
@@ -297,18 +291,34 @@ class HomeFooterSection extends StatelessWidget {
             runSpacing: 2,
             children: [
               _footerLink(context, 'FAQs', () => _showFaqsSheet(context)),
-              if (kIsWeb) ...[
-                Text('•', style: TextStyle(color: muted, fontSize: 12)),
-                _footerLink(context, 'Review', () => ReviewSheet.show(context)),
-              ],
+              Text('•', style: TextStyle(color: muted, fontSize: 12)),
+              _footerLink(context, 'Review', () => ReviewSheet.show(context)),
               Text('•', style: TextStyle(color: muted, fontSize: 12)),
               _footerLink(context, 'Contact', () => _showContactSheet(context)),
               Text('•', style: TextStyle(color: muted, fontSize: 12)),
               _footerLink(context, 'Disclaimers', () => _showDisclaimersSheet(context)),
               Text('•', style: TextStyle(color: muted, fontSize: 12)),
-              _footerLink(context, 'Privacy', () => _openUrl(PartnerLinks.privacyPolicyUrl)),
+              _footerLink(
+                context,
+                'Privacy',
+                () => kIsWeb
+                    ? _openUrl(PartnerLinks.privacyPolicyUrl)
+                    : _showPolicySnackBar(
+                        context,
+                        'Privacy: Zero personal data collected. Your medications and reminders stay 100% on this device and are never uploaded.',
+                      ),
+              ),
               Text('•', style: TextStyle(color: muted, fontSize: 12)),
-              _footerLink(context, 'Terms', () => _openUrl(PartnerLinks.termsOfServiceUrl)),
+              _footerLink(
+                context,
+                'Terms',
+                () => kIsWeb
+                    ? _openUrl(PartnerLinks.termsOfServiceUrl)
+                    : _showPolicySnackBar(
+                        context,
+                        'Terms: Informational only — not medical advice. Always verify prescriptions, dosages, and generic substitutions with your doctor or pharmacist.',
+                      ),
+              ),
             ],
           ),
           const SizedBox(height: 6),

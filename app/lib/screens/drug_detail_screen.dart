@@ -29,6 +29,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   late Drug _drug;
   bool _isRefreshingDetails = false;
   String? _selectedStrength;
+  String? _selectedRouteGroup;
   List<Map<String, dynamic>> _verifiedPartners = const [];
   Map<String, dynamic>? _discountCard;
   Map<String, dynamic>? _brandAssistance;
@@ -87,6 +88,37 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     }).toList();
   }
 
+  String? _routeForStrength(Drug drug, String? strength) {
+    final groups = drug.groupedStrengthsByRoute;
+    if (groups.isEmpty) return null;
+    if (strength != null) {
+      for (final entry in groups.entries) {
+        if (entry.value.contains(strength)) return entry.key;
+      }
+    }
+    return groups.keys.first;
+  }
+
+  String? get _selectedDosageSummary {
+    final s = _selectedStrength?.trim();
+    if (s == null || s.isEmpty) return null;
+    final groups = _drug.groupedStrengthsByRoute;
+    if (groups.length > 1 && _selectedRouteGroup != null) {
+      return '$s • $_selectedRouteGroup';
+    }
+    return s;
+  }
+
+  IconData _iconForRouteGroup(String routeGroup) {
+    final lower = routeGroup.toLowerCase();
+    if (lower.contains('inject')) return Icons.vaccines_outlined;
+    if (lower.contains('solution') || lower.contains('liquid')) return Icons.water_drop_outlined;
+    if (lower.contains('topical') || lower.contains('patch')) return Icons.spa_outlined;
+    if (lower.contains('inhal') || lower.contains('spray')) return Icons.air_outlined;
+    if (lower.contains('eye') || lower.contains('ear')) return Icons.visibility_outlined;
+    return Icons.medication_outlined;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -94,6 +126,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     final strengths = _drug.availableStrengths;
     if (strengths.isNotEmpty) {
       _selectedStrength = _matchBestStrength(strengths, widget.initialStrength);
+      _selectedRouteGroup = _routeForStrength(_drug, _selectedStrength);
     } else if (widget.initialStrength != null) {
       _selectedStrength = widget.initialStrength;
     }
@@ -119,6 +152,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               updated.availableStrengths,
               widget.initialStrength ?? _selectedStrength,
             );
+            _selectedRouteGroup = _routeForStrength(updated, _selectedStrength);
           }
           _isRefreshingDetails = false;
         });
@@ -243,24 +277,67 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                   ),
                   const SizedBox(height: 12),
                   if (drug.availableStrengths.length > 1) ...[
-                    Text(
-                      'Select Your Dosage (Optional):',
-                      style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: drug.availableStrengths.map((s) {
-                        final isSelected = _selectedStrength == s;
-                        return ChoiceChip(
-                          label: Text(s),
-                          selected: isSelected,
-                          onSelected: (_) => setState(() => _selectedStrength = s),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 12),
+                    ...() {
+                      final routeGroups = drug.groupedStrengthsByRoute;
+                      final hasMultipleRoutes = routeGroups.length > 1;
+                      final activeRoute = (hasMultipleRoutes && routeGroups.containsKey(_selectedRouteGroup))
+                          ? _selectedRouteGroup!
+                          : (routeGroups.isNotEmpty ? routeGroups.keys.first : null);
+                      final visibleStrengths = activeRoute != null
+                          ? (routeGroups[activeRoute] ?? drug.availableStrengths)
+                          : drug.availableStrengths;
+
+                      return <Widget>[
+                        Text(
+                          hasMultipleRoutes
+                              ? 'Dosage Form & Strength:'
+                              : 'Select Your Dosage (Optional):',
+                          style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        if (hasMultipleRoutes) ...[
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: routeGroups.entries.map((entry) {
+                                final isRouteSelected = entry.key == activeRoute;
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: FilterChip(
+                                    avatar: Icon(_iconForRouteGroup(entry.key), size: 16),
+                                    label: Text('${entry.key} (${entry.value.length})'),
+                                    selected: isRouteSelected,
+                                    showCheckmark: false,
+                                    onSelected: (_) {
+                                      setState(() {
+                                        _selectedRouteGroup = entry.key;
+                                        if (!entry.value.contains(_selectedStrength) && entry.value.isNotEmpty) {
+                                          _selectedStrength = entry.value.first;
+                                        }
+                                      });
+                                    },
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: visibleStrengths.map((s) {
+                            final isSelected = _selectedStrength == s;
+                            return ChoiceChip(
+                              label: Text(s),
+                              selected: isSelected,
+                              onSelected: (_) => setState(() => _selectedStrength = s),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 12),
+                      ];
+                    }(),
                   ],
                   Wrap(
                     spacing: 10,
@@ -270,7 +347,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                         onPressed: () => DoctorHandoutSheet.show(
                           context,
                           drug,
-                          selectedStrength: _selectedStrength,
+                          selectedStrength: _selectedDosageSummary,
                         ),
                         icon: const Icon(Icons.badge_outlined, size: 16),
                         label: const Text('Show Doctor / Pharmacist Card'),
@@ -279,7 +356,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                         onPressed: () => ReminderSheet.show(
                           context,
                           drug,
-                          dosage: _selectedStrength,
+                          dosage: _selectedDosageSummary,
                         ),
                         icon: Icon(
                           reminder != null && reminder.enabled
@@ -375,7 +452,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      if (drug.commercialGenericAvailable) ...[
+                      if (drug.commercialGenericAvailable || drug.isUnbrandedGeneric) ...[
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(12),
@@ -389,9 +466,13 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                drug.drugType == 'biologic'
-                                    ? 'Available Biosimilar Prescription:'
-                                    : 'Available Generic Prescription:',
+                                drug.isUnbrandedGeneric
+                                    ? (drug.referenceBrands.isNotEmpty
+                                        ? 'Generic Version of Brand-Name Drug(s):'
+                                        : 'Already a Generic Medication:')
+                                    : (drug.drugType == 'biologic'
+                                        ? 'Available Biosimilar Prescription:'
+                                        : 'Available Generic Prescription:'),
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
@@ -400,7 +481,11 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                drug.genericName,
+                                drug.isUnbrandedGeneric
+                                    ? (drug.referenceBrands.isNotEmpty
+                                        ? drug.referenceBrands.join(', ')
+                                        : drug.genericName)
+                                    : drug.genericName,
                                 style: theme.textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.bold,
                                   color: theme.colorScheme.onSurface,

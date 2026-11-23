@@ -193,6 +193,22 @@ function createCheckUpdatesRouter(db) {
         drug_type: drug.drug_type,
         dosage_form: drug.dosage_form,
         strength: drug.strength,
+        dosage_options: (() => {
+          if (!drug.dosage_options) return null;
+          try {
+            return JSON.parse(drug.dosage_options);
+          } catch (_) {
+            return null;
+          }
+        })(),
+        reference_brands: (() => {
+          if (!drug.reference_brands) return [];
+          try {
+            return JSON.parse(drug.reference_brands);
+          } catch (_) {
+            return [];
+          }
+        })(),
         has_approved_generic: hasApprovedGeneric,
         commercial_generic_available: commercialGenericAvailable,
         substitution_status: commercialGenericAvailable ? substitution.substitution_status : 'brand_only',

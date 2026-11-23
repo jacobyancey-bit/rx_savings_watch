@@ -186,7 +186,7 @@ class IngestionScheduler {
         auditedRxcuis.push(drug.rxcui);
         try {
           const beforeEval = this.detector.evaluateDrug(drug, { persistAlert: false });
-          const updated = await discoverFn(this.db, query, { forceRefresh: true });
+          const updated = await discoverFn(this.db, query, { forceRefresh: true, rxcui: drug.rxcui });
           // Always advance updated_at so a drug that fails or returns null never gets stuck at the front of the queue
           touchDrugStmt.run(drug.id);
 

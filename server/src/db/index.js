@@ -46,6 +46,15 @@ function getDb(customPath) {
 function initSchema(db) {
   const schemaSql = fs.readFileSync(config.SCHEMA_PATH, 'utf8');
   db.exec(schemaSql);
+
+  // Backwards-compatible migrations for existing production SQLite databases
+  const cols = db.prepare('PRAGMA table_info(drugs)').all();
+  if (!cols.some(c => c.name === 'dosage_options')) {
+    db.exec('ALTER TABLE drugs ADD COLUMN dosage_options TEXT;');
+  }
+  if (!cols.some(c => c.name === 'reference_brands')) {
+    db.exec('ALTER TABLE drugs ADD COLUMN reference_brands TEXT;');
+  }
 }
 
 /**

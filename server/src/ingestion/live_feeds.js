@@ -52,36 +52,206 @@ function formatFdaDate(raw) {
   return null;
 }
 
+const SALT_SUFFIX_REGEX = /\b(hydrochloride|hcl|dihydrochloride|sodium|potassium|calcium|magnesium|mesylate|besylate|tartrate|bitartrate|succinate|fumarate|hemifumarate|maleate|citrate|acetate|phosphate|sulfate|bisulfate|bromide|chloride|dimesylate|disoproxil|monohydrate|dihydrate|trihydrate|anhydrous|tromethamine|olamine|propionate|valerate|dipropionate|acetonide|saccharate|aspartate|gluconate|lactate|nitrate|oxide|benzoate|pamoate|stearate|tosylate|xinafoate|furoate|malate|carbonate|bicarbonate|erbumine|medoxomil|cilexetil|pivoxil|alafenamide|k\b|na\b)\b/gi;
+
 /**
- * 1. NLM RxNav: Resolve a drug name to a canonical RxNorm concept (preferring SBD/SCD).
+ * Normalize an active ingredient string to its base chemical moiety (salt-stripped, lowercase).
  */
-async function fetchRxNormConcept(brandName, genericName) {
+function normalizeIngredientName(name) {
+  if (!name) return '';
+  const cleaned = String(name)
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9\s\-]/g, ' ')
+    .replace(SALT_SUFFIX_REGEX, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || String(name).toLowerCase().trim();
+}
+
+/**
+ * Parse a generic name string or ingredient array into a sorted, deduplicated list of base moieties.
+ */
+function parseExpectedIngredients(genericNameOrList) {
+  if (!genericNameOrList) return [];
+  const rawParts = Array.isArray(genericNameOrList)
+    ? genericNameOrList
+    : String(genericNameOrList).split(/\s*(?:,|;|\/|\band\b|\bwith\b)\s*/i);
+
+  const normalized = rawParts
+    .map(p => normalizeIngredientName(p))
+    .filter(Boolean);
+
+  return [...new Set(normalized)].sort();
+}
+
+function isMixedAmphetamineSet(baseNames) {
+  return (
+    Array.isArray(baseNames) &&
+    baseNames.length > 0 &&
+    baseNames.every(n => n.includes('amphetamine'))
+  );
+}
+
+/**
+ * Verify that two single normalized ingredient names refer to the same active moiety.
+ */
+function ingredientTokensMatch(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a))) return true;
+  const aFirst = a.split(/[\s\-]+/)[0];
+  const bFirst = b.split(/[\s\-]+/)[0];
+  return aFirst.length >= 5 && aFirst === bFirst;
+}
+
+/**
+ * Clinical Accuracy Invariant:
+ * Strictly verify that a candidate product's active ingredient list has the EXACT SAME
+ * ingredient count AND matching active moieties as the expected drug formulation.
+ * Prevents single-ingredient brands (e.g. Flomax = tamsulosin, Glucophage = metformin)
+ * from ever colliding with multi-ingredient combos (e.g. Jalyn = dutasteride/tamsulosin,
+ * Janumet = sitagliptin/metformin), and vice versa.
+ */
+function matchesExpectedIngredients(candidateIngredients, expectedBaseIngredients) {
+  const expected = Array.isArray(expectedBaseIngredients)
+    ? expectedBaseIngredients.map(normalizeIngredientName).filter(Boolean)
+    : parseExpectedIngredients(expectedBaseIngredients);
+  if (expected.length === 0) return true;
+
+  if (!Array.isArray(candidateIngredients) || candidateIngredients.length === 0) {
+    return false;
+  }
+
+  const candidateRaw = candidateIngredients
+    .map(item => (typeof item === 'string' ? item : item?.name || ''))
+    .filter(Boolean);
+  const candidateBases = [...new Set(candidateRaw.map(normalizeIngredientName).filter(Boolean))].sort();
+  if (candidateBases.length === 0) return false;
+
+  // Mixed-salt amphetamine formulations (e.g. Adderall XR / Mydayis) list 4 amphetamine salts
+  // that map to 1-2 RxNorm base ingredients (amphetamine / dextroamphetamine).
+  if (isMixedAmphetamineSet(expected) && isMixedAmphetamineSet(candidateBases)) {
+    return true;
+  }
+
+  // Exact active ingredient count MUST match (1 !== 2!)
+  if (candidateBases.length !== expected.length) {
+    return false;
+  }
+
+  // Bijective 1-to-1 ingredient match
+  const used = new Set();
+  for (const exp of expected) {
+    const idx = candidateBases.findIndex((cand, i) => !used.has(i) && ingredientTokensMatch(exp, cand));
+    if (idx === -1) return false;
+    used.add(idx);
+  }
+  return true;
+}
+
+/**
+ * Detect whether an RxNorm concept name (SBD/SCD/BPCK/GPCK) represents a multi-ingredient product.
+ * RxNorm separates distinct active ingredients with " / " (spaces around slash),
+ * whereas single-ingredient concentrations use "MG/ML" or "MG/0.8 ML" (no space before slash).
+ */
+function isMultiIngredientRxNormName(name) {
+  return /\s\/\s/.test(String(name || ''));
+}
+
+/**
+ * Extract the bracketed brand name from an RxNorm SBD name, e.g. "... [Flomax]" -> "flomax".
+ */
+function extractRxNormBrand(name) {
+  const m = String(name || '').match(/\[([^\]]+)\]\s*$/);
+  return m ? m[1].trim().toLowerCase() : null;
+}
+
+/**
+ * Filter an RxNorm conceptProperties list by exact brand (when provided) and exact ingredient multiplicity.
+ */
+function filterRxNormConcepts(concepts, { brandName = null, expectedIngredients = [] } = {}) {
+  if (!Array.isArray(concepts) || concepts.length === 0) return [];
+  const expected = parseExpectedIngredients(expectedIngredients);
+  const expectedIsMixedAmp = isMixedAmphetamineSet(expected);
+  const expectedIsCombo = expected.length > 1 && !expectedIsMixedAmp;
+  const brandLower = brandName ? brandName.trim().toLowerCase() : null;
+
+  const matchesMultiplicity = (prop) => {
+    if (expected.length === 0 || expectedIsMixedAmp) return true;
+    const isMulti = isMultiIngredientRxNormName(prop.name);
+    if (isMulti !== expectedIsCombo) return false;
+    const nameLower = (prop.name || '').toLowerCase();
+    return expected.every(ing => {
+      const stem = ing.split(/[\s\-]+/)[0];
+      return stem.length < 4 || nameLower.includes(stem);
+    });
+  };
+
+  // 1. If a brandName was requested, prefer exact [Brand] match + matching ingredient multiplicity
+  if (brandLower) {
+    const exactBrandAndIng = concepts.filter(
+      p => extractRxNormBrand(p.name) === brandLower && matchesMultiplicity(p)
+    );
+    if (exactBrandAndIng.length > 0) return exactBrandAndIng;
+
+    const exactBrand = concepts.filter(p => extractRxNormBrand(p.name) === brandLower);
+    if (exactBrand.length > 0) return exactBrand;
+  }
+
+  // 2. Otherwise enforce exact ingredient multiplicity & stems
+  const byIng = concepts.filter(matchesMultiplicity);
+  return byIng.length > 0 ? byIng : [];
+}
+
+/**
+ * 1. NLM RxNav: Resolve a drug name to a canonical RxNorm concept (strictly matching brand & ingredient count).
+ */
+async function fetchRxNormConcept(brandName, genericName, expectedIngredients = null) {
+  const expected = parseExpectedIngredients(expectedIngredients || genericName);
+  const expectedIsCombo = expected.length > 1 && !isMixedAmphetamineSet(expected);
+
   const candidates = [
     brandName,
-    brandName ? brandName.split(' ')[0] : null,
+    brandName && brandName.includes(' ') ? brandName.split(' ')[0] : null,
     genericName,
-    genericName ? genericName.split(/[,/]/)[0].trim() : null,
+    // NEVER truncate a multi-ingredient generic name to its first ingredient!
+    !expectedIsCombo && genericName ? genericName.split(/[,/]/)[0].trim() : null,
   ].filter(Boolean);
 
+  const seenCandidates = new Set();
   for (const candidate of candidates) {
+    const candKey = candidate.toLowerCase();
+    if (seenCandidates.has(candKey)) continue;
+    seenCandidates.add(candKey);
+
     const query = encodeURIComponent(candidate);
     const data = await fetchJsonSafe(`https://rxnav.nlm.nih.gov/REST/drugs.json?name=${query}`);
     const groups = data?.drugGroup?.conceptGroup || [];
 
-    const preferredOrder = ['SBD', 'SCD', 'BPCK', 'GPCK'];
+    // Prefer SBD for branded drugs, SCD for unbranded generic searches
+    const preferredOrder = brandName ? ['SBD', 'SCD', 'BPCK', 'GPCK'] : ['SCD', 'SBD', 'GPCK', 'BPCK'];
     for (const tty of preferredOrder) {
       const group = groups.find(g => g.tty === tty && Array.isArray(g.conceptProperties) && g.conceptProperties.length > 0);
-      if (group) {
-        const prop = group.conceptProperties[0];
-        const fullName = prop.name || '';
-        const strengthMatch = fullName.match(/\b(\d+(?:\.\d+)?\s*(?:MG|MCG|ML|G|%|UNT)(?:\s*\/\s*\d+(?:\.\d+)?\s*(?:ML|MG|ACTUAT))?)\b/i);
-        const formMatch = fullName.match(/\b(Oral Tablet|Oral Capsule|Injectable Solution|Auto-Injector|Subcutaneous Solution|Ophthalmic Solution|Inhalation Powder|Metered Dose Inhaler|Delayed Release Oral Capsule|Extended Release Oral Tablet)\b/i);
-        return {
-          rxcui: String(prop.rxcui),
-          strength: strengthMatch ? strengthMatch[1].toLowerCase() : null,
-          dosage_form: formMatch ? formMatch[1].toLowerCase() : null,
-        };
-      }
+      if (!group) continue;
+
+      const filtered = filterRxNormConcepts(group.conceptProperties, {
+        brandName: tty === 'SBD' || tty === 'BPCK' ? brandName : null,
+        expectedIngredients: expected,
+      });
+      const prop = filtered[0];
+      if (!prop) continue;
+
+      const fullName = prop.name || '';
+      const strengthMatch = fullName.match(/\b(\d+(?:\.\d+)?\s*(?:MG|MCG|ML|G|%|UNT)(?:\s*\/\s*\d+(?:\.\d+)?\s*(?:ML|MG|ACTUAT))?)\b/i);
+      const formMatch = fullName.match(/\b(Oral Tablet|Oral Capsule|Injectable Solution|Auto-Injector|Subcutaneous Solution|Ophthalmic Solution|Inhalation Powder|Metered Dose Inhaler|Delayed Release Oral Capsule|Extended Release Oral Tablet)\b/i);
+      return {
+        rxcui: String(prop.rxcui),
+        name: fullName,
+        tty,
+        strength: strengthMatch ? strengthMatch[1].toLowerCase() : null,
+        dosage_form: formMatch ? formMatch[1].toLowerCase() : null,
+      };
     }
   }
   return null;
@@ -105,16 +275,37 @@ async function fetchRxNormIngredients(rxcui) {
 }
 
 /**
+ * Extract the active ingredient list from an OpenFDA Drugs@FDA application record.
+ */
+function getFdaAppIngredients(app) {
+  const prods = app?.products || [];
+  const activeProds = prods.filter(p => (p.marketing_status || '').toLowerCase() !== 'discontinued');
+  const sampleProd = activeProds[0] || prods[0];
+  if (Array.isArray(sampleProd?.active_ingredients) && sampleProd.active_ingredients.length > 0) {
+    return sampleProd.active_ingredients;
+  }
+  if (Array.isArray(app?.openfda?.substance_name) && app.openfda.substance_name.length > 0) {
+    return app.openfda.substance_name.map(name => ({ name }));
+  }
+  return [];
+}
+
+/**
  * 2. OpenFDA Drugs@FDA: Reference-NDA-First FDA Orange Book Lookup!
  *
- * CRITICAL FDA ORANGE BOOK INVARIANT:
- * A brand-name NDA ONLY receives a `te_code` (AB, AB1, AB2, AP, AA, etc.) once FDA approves
- * a therapeutically equivalent generic ANDA for that exact formulation.
- * If the reference brand NDA has NO `te_code` (e.g. Jornay PM NDA209311, Ozempic, Eliquis),
- * then ZERO therapeutically equivalent generics exist — we MUST NOT pull generic ANDAs
- * belonging to OTHER brands that merely share the same active ingredient (e.g. Ritalin/Concerta)!
+ * CRITICAL FDA ORANGE BOOK INVARIANTS:
+ * 1. A brand-name NDA ONLY receives a `te_code` (AB, AB1, AB2, AP, AA, etc.) once FDA approves
+ *    a therapeutically equivalent generic ANDA for that exact formulation.
+ *    If the reference brand NDA has NO `te_code` (e.g. Jornay PM NDA209311, Ozempic, Eliquis),
+ *    then ZERO therapeutically equivalent generics exist — we MUST NOT pull generic ANDAs
+ *    belonging to OTHER brands that merely share the same active ingredient (e.g. Ritalin/Concerta)!
+ * 2. Exact Active Ingredient Count & Set Match: Every generic ANDA attached to a drug MUST have
+ *    the exact same active ingredient count and moieties as the reference NDA (e.g. Flomax NDA020579
+ *    has 1 ingredient: tamsulosin -> NEVER attach 2-ingredient Jalyn/dutasteride+tamsulosin ANDAs!).
  */
-async function fetchDrugsAtFda(genericName, brandName, drugType = 'small_molecule') {
+async function fetchDrugsAtFda(genericName, brandName, drugType = 'small_molecule', expectedIngredients = null) {
+  const fallbackExpected = parseExpectedIngredients(expectedIngredients || genericName);
+
   // Step A: For small-molecule branded drugs, ALWAYS inspect the Reference Brand NDA first!
   if (brandName && drugType !== 'biologic') {
     const bTerm = encodeURIComponent(`"${brandName}"`);
@@ -151,7 +342,13 @@ async function fetchDrugsAtFda(genericName, brandName, drugType = 'small_molecul
       const activeProducts = refProducts.length > 0 ? refProducts : (refNda.products || []);
       const teCodes = [...new Set(activeProducts.map(p => p.te_code).filter(Boolean))];
       const refDosageForms = [...new Set(activeProducts.map(p => p.dosage_form).filter(Boolean))];
-      const substances = refNda.openfda?.substance_name || [];
+      const refIngredientsRaw = getFdaAppIngredients(refNda);
+      const refExpected = parseExpectedIngredients(refIngredientsRaw.map(a => a.name));
+      const strictExpected = refExpected.length > 0 ? refExpected : fallbackExpected;
+      const substances =
+        refNda.openfda?.substance_name?.length > 0
+          ? refNda.openfda.substance_name
+          : refIngredientsRaw.map(a => a.name).filter(Boolean);
 
       // FDA Orange Book Rule:
       // - If the reference brand NDA is ACTIVELY marketed and has NO TE code (e.g. Jornay PM, Ozempic, Jardiance),
@@ -163,7 +360,7 @@ async function fetchDrugsAtFda(genericName, brandName, drugType = 'small_molecul
       }
 
       if (teCodes.length > 0) {
-        // Reference NDA HAS a TE code (e.g. AB, AB1, AB2, AP) -> fetch ONLY matching-TE ANDAs!
+        // Reference NDA HAS a TE code (e.g. AB, AB1, AB2, AP) -> fetch ONLY matching-TE, matching-ingredient ANDAs!
         let results = [refNda];
         const teCode = teCodes[0];
         const formClause = refDosageForms[0]
@@ -177,7 +374,10 @@ async function fetchDrugsAtFda(genericName, brandName, drugType = 'small_molecul
             `https://api.fda.gov/drug/drugsfda.json?search=openfda.substance_name:${subQuery}${formClause}${teClause}&limit=25`
           );
           if (matched?.results?.length) {
-            results = [...results, ...matched.results];
+            const exactMatched = matched.results.filter(a =>
+              matchesExpectedIngredients(getFdaAppIngredients(a), strictExpected)
+            );
+            results = [...results, ...exactMatched];
           }
         }
 
@@ -188,7 +388,10 @@ async function fetchDrugsAtFda(genericName, brandName, drugType = 'small_molecul
             `https://api.fda.gov/drug/drugsfda.json?search=openfda.generic_name:${gTerm}${teClause}&limit=25`
           );
           if (matched2?.results?.length) {
-            results = [...results, ...matched2.results];
+            const exactMatched2 = matched2.results.filter(a =>
+              matchesExpectedIngredients(getFdaAppIngredients(a), strictExpected)
+            );
+            results = [...results, ...exactMatched2];
           }
         }
 
@@ -202,10 +405,19 @@ async function fetchDrugsAtFda(genericName, brandName, drugType = 'small_molecul
     }
   }
 
-  // Step B: Biologics (Purple Book / BLA) or unbranded generic searches
+  // Step B: Biologics (Purple Book / BLA), discontinued legacy brands, or unbranded generic searches
   const term = encodeURIComponent(`"${genericName}"`);
   let data = await fetchJsonSafe(`https://api.fda.gov/drug/drugsfda.json?search=openfda.generic_name:${term}&limit=25`);
   let results = data?.results || [];
+
+  if (results.length > 0 && fallbackExpected.length > 0) {
+    const exactFiltered = results.filter(a =>
+      matchesExpectedIngredients(getFdaAppIngredients(a), fallbackExpected)
+    );
+    if (exactFiltered.length > 0) {
+      results = exactFiltered;
+    }
+  }
 
   if (results.length === 0 && brandName) {
     const bTerm = encodeURIComponent(`"${brandName}"`);
@@ -225,15 +437,20 @@ async function fetchDrugsAtFda(genericName, brandName, drugType = 'small_molecul
 
 /**
  * 3. OpenFDA NDC Directory: Pull FINISHED commercial drug listings (excluding bulk ingredients).
- * For multi-ingredient drugs (comma-separated generic_name), also searches by primary active ingredient
- * to capture commercial generic ANDA NDCs regardless of salt listing order.
+ * Strictly filters returned NDCs by exact active ingredient count & moieties so single-ingredient
+ * drugs never absorb combination NDCs (and vice versa).
  */
-async function fetchOpenFdaNdcs(genericName) {
+async function fetchOpenFdaNdcs(genericName, expectedIngredients = null) {
+  const expected = parseExpectedIngredients(expectedIngredients || genericName);
   const term = encodeURIComponent(`"${genericName}"`);
   const data = await fetchJsonSafe(
-    `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+generic_name:${term}&limit=25`
+    `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+generic_name:${term}&limit=50`
   );
   let results = data?.results || [];
+
+  if (expected.length > 0) {
+    results = results.filter(r => matchesExpectedIngredients(r.active_ingredients, expected));
+  }
 
   const hasCommercialAnda = results.some(r => {
     const c = (r.marketing_category || '').toUpperCase();
@@ -244,10 +461,13 @@ async function fetchOpenFdaNdcs(genericName) {
     if (primaryIngredient.length >= 4) {
       const ingTerm = encodeURIComponent(`"${primaryIngredient}"`);
       const fallback = await fetchJsonSafe(
-        `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+(marketing_category:"ANDA"+OR+marketing_category:"NDA+AUTHORIZED+GENERIC")+AND+active_ingredients.name:${ingTerm}&limit=25`
+        `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+(marketing_category:"ANDA"+OR+marketing_category:"NDA+AUTHORIZED+GENERIC")+AND+active_ingredients.name:${ingTerm}&limit=50`
       );
       if (fallback?.results?.length) {
-        results = [...results, ...fallback.results];
+        const filteredFallback = expected.length > 0
+          ? fallback.results.filter(r => matchesExpectedIngredients(r.active_ingredients, expected))
+          : fallback.results;
+        results = [...results, ...filteredFallback];
       }
     }
   }
@@ -272,13 +492,47 @@ async function getLatestNadacDatasetId() {
   return null;
 }
 
-async function fetchCmsNadacPrices(searchKeyword) {
+/**
+ * Check whether a CMS NADAC ndc_description matches the expected single vs multi-ingredient profile.
+ * CMS NADAC formats combination drugs with a hyphen between ingredient names before the strength,
+ * e.g. "DUTASTERIDE-TAMSULOSIN 0.5-0.4", "LISINOPRIL-HCTZ 20-12.5 MG", "SITAGLIPTIN-METFORMIN 50-500".
+ */
+function matchesNadacIngredientProfile(ndcDescription, expectedIngredients, isBrandQuery = false) {
+  if (isBrandQuery) return true;
+  const expected = parseExpectedIngredients(expectedIngredients);
+  if (expected.length === 0 || isMixedAmphetamineSet(expected)) return true;
+
+  const desc = String(ndcDescription || '').toUpperCase().trim();
+  if (!desc) return false;
+
+  // Portion of the description before the first numeric strength token
+  const namePart = desc.split(/\s+\d/)[0] || desc;
+  const looksLikeCombo = /[A-Z]{3,}-[A-Z]{3,}/.test(namePart) || namePart.includes('/');
+
+  if (expected.length === 1) {
+    // Reject combination NADAC rows (e.g. DUTASTERIDE-TAMSULOSIN) for single-ingredient drugs!
+    if (looksLikeCombo) return false;
+    return true;
+  }
+
+  // For multi-ingredient drugs, require at least 2 ingredient stems (or combo separator) to match
+  const matchedStems = expected.filter(ing => {
+    const stem = ing.split(/[\s\-]+/)[0].toUpperCase();
+    if (stem === 'HYDROCHLOROTHIAZIDE' && /\bHCTZ\b/.test(desc)) return true;
+    return stem.length >= 4 && desc.includes(stem.slice(0, Math.min(stem.length, 6)));
+  });
+  return matchedStems.length >= Math.min(expected.length, 2);
+}
+
+async function fetchCmsNadacPrices(searchKeyword, expectedIngredients = null, isBrandQuery = false) {
   const datasetId = await getLatestNadacDatasetId();
   if (!datasetId) return [];
   const token = encodeURIComponent(`%${searchKeyword.toUpperCase().split(' ')[0]}%`);
-  const url = `https://data.medicaid.gov/api/1/datastore/query/${datasetId}/0?limit=20&conditions[0][property]=ndc_description&conditions[0][value]=${token}&conditions[0][operator]=LIKE`;
+  const url = `https://data.medicaid.gov/api/1/datastore/query/${datasetId}/0?limit=30&conditions[0][property]=ndc_description&conditions[0][value]=${token}&conditions[0][operator]=LIKE`;
   const data = await fetchJsonSafe(url);
-  return data?.results || [];
+  const rows = data?.results || [];
+  if (!expectedIngredients || isBrandQuery) return rows;
+  return rows.filter(r => matchesNadacIngredientProfile(r.ndc_description, expectedIngredients, false));
 }
 
 /**
@@ -303,28 +557,40 @@ async function fetchLiveFdaShortages() {
  */
 async function ingestLiveDrug(db, seed) {
   const { brand_name: brandName, generic_name: genericName, drug_type: drugType = 'small_molecule' } = seed;
+  const expectedIngredients = parseExpectedIngredients(seed.expected_ingredients || genericName);
 
-  // Step 1: Resolve canonical RxNorm RXCUI (or reuse existing row by brand/generic name)
-  const existing = db.prepare(
-    'SELECT * FROM drugs WHERE LOWER(brand_name) = LOWER(?) OR LOWER(generic_name) = LOWER(?)'
-  ).get(brandName || '', genericName);
+  // Step 1: Resolve canonical RxNorm RXCUI (match strictly by brand_name when present so distinct
+  // brands sharing ingredients — e.g. Ozempic vs Wegovy, Mydayis vs Adderall XR, Flomax vs Jalyn — NEVER collide!)
+  const existing = (seed.rxcui ? db.prepare('SELECT * FROM drugs WHERE rxcui = ?').get(String(seed.rxcui)) : null) ||
+    (brandName
+      ? db.prepare('SELECT * FROM drugs WHERE LOWER(brand_name) = LOWER(?)').get(brandName)
+      : db.prepare('SELECT * FROM drugs WHERE brand_name IS NULL AND LOWER(generic_name) = LOWER(?)').get(genericName));
 
-  const rxConcept = await fetchRxNormConcept(brandName, genericName);
+  const rxConcept = await fetchRxNormConcept(brandName, genericName, expectedIngredients);
   const rxcui = existing?.rxcui || rxConcept?.rxcui;
   if (!rxcui) {
     return { skipped: true, reason: 'No RxNorm RXCUI resolved' };
   }
 
   // Upsert canonical drug record
+  const dosageOptionsJson = Array.isArray(seed.dosage_options) && seed.dosage_options.length > 0
+    ? JSON.stringify(seed.dosage_options)
+    : null;
+  const referenceBrandsJson = Array.isArray(seed.reference_brands) && seed.reference_brands.length > 0
+    ? JSON.stringify(seed.reference_brands)
+    : null;
+
   db.prepare(`
     INSERT INTO drugs (
-      rxcui, brand_name, generic_name, active_ingredient, dosage_form, strength, drug_type, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      rxcui, brand_name, generic_name, active_ingredient, dosage_form, strength, dosage_options, reference_brands, drug_type, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(rxcui) DO UPDATE SET
       brand_name = COALESCE(excluded.brand_name, drugs.brand_name),
       generic_name = excluded.generic_name,
       dosage_form = COALESCE(drugs.dosage_form, excluded.dosage_form),
       strength = COALESCE(excluded.strength, drugs.strength),
+      dosage_options = COALESCE(excluded.dosage_options, drugs.dosage_options),
+      reference_brands = COALESCE(excluded.reference_brands, drugs.reference_brands),
       drug_type = excluded.drug_type,
       updated_at = datetime('now')
   `).run(
@@ -334,6 +600,8 @@ async function ingestLiveDrug(db, seed) {
     genericName,
     seed.dosage_form || rxConcept?.dosage_form || null,
     seed.strength || rxConcept?.strength || null,
+    dosageOptionsJson,
+    referenceBrandsJson,
     drugType
   );
 
@@ -341,7 +609,7 @@ async function ingestLiveDrug(db, seed) {
   const drugId = drugRow.id;
 
   // Fetch FDA Drugs@FDA first so we know if this brand has an approved TE-rated generic
-  const fdaApps = await fetchDrugsAtFda(genericName, brandName, drugType);
+  const fdaApps = await fetchDrugsAtFda(genericName, brandName, drugType, expectedIngredients);
   const hasFdaApprovedGeneric = fdaApps.some(app => {
     const appNo = app.application_number || '';
     if (appNo.startsWith('ANDA')) return true;
@@ -357,10 +625,10 @@ async function ingestLiveDrug(db, seed) {
   // so generic NDCs from OTHER brands sharing the same ingredient (e.g. Ritalin/Concerta) never pollute this drug!
   const [ndcRows, nadacGenericRows, nadacBrandRows, dailyMedRows, rxIngredients] = await Promise.all([
     hasFdaApprovedGeneric
-      ? fetchOpenFdaNdcs(genericName)
+      ? fetchOpenFdaNdcs(genericName, expectedIngredients)
       : (brandName ? fetchJsonSafe(`https://api.fda.gov/drug/ndc.json?search=finished:true+AND+brand_name:${encodeURIComponent(`"${brandName}"`)}&limit=25`).then(d => d?.results || []) : Promise.resolve([])),
-    hasFdaApprovedGeneric ? fetchCmsNadacPrices(genericName) : Promise.resolve([]),
-    brandName ? fetchCmsNadacPrices(brandName) : Promise.resolve([]),
+    hasFdaApprovedGeneric ? fetchCmsNadacPrices(genericName, expectedIngredients, false) : Promise.resolve([]),
+    brandName ? fetchCmsNadacPrices(brandName, expectedIngredients, true) : Promise.resolve([]),
     fetchDailyMedSpls(brandName || genericName),
     fetchRxNormIngredients(rxcui),
   ]);
@@ -782,56 +1050,142 @@ function formatStrengthNumber(num) {
   return Number(num.toFixed(3)).toString();
 }
 
+function normalizeDosageFormLabel(rawForm, rawRoute = '') {
+  const f = `${rawForm || ''} ${rawRoute || ''}`.toLowerCase();
+  if (!f.trim()) return 'Oral';
+  if (/ophthalm|eye/.test(f)) return 'Eye Drops';
+  if (/otic|ear/.test(f)) return 'Ear Drops';
+  if (/inhal|aerosol|nebul|diskus|ellipta|metered|spray/.test(f)) return 'Inhaler / Spray';
+  if (/inject|intraven|infus|syringe|vial|ampul|subcut|intramusc|auto-injector/.test(f)) return 'Injectable';
+  if (/patch|transdermal/.test(f)) return 'Patch';
+  if (/cream|oint|gel|lotion|foam|shampoo|topical/.test(f)) return 'Topical';
+  if (/tablet/.test(f)) {
+    if (/extended|sustained|controlled/.test(f)) return 'Extended-Release Tablet';
+    if (/delayed/.test(f)) return 'Delayed-Release Tablet';
+    if (/disintegrat|odt/.test(f)) return 'Orally Disintegrating Tablet';
+    if (/chew/.test(f)) return 'Chewable Tablet';
+    return 'Oral Tablet';
+  }
+  if (/capsule/.test(f)) {
+    if (/extended|sustained|controlled/.test(f)) return 'Extended-Release Capsule';
+    if (/delayed/.test(f)) return 'Delayed-Release Capsule';
+    return 'Oral Capsule';
+  }
+  if (/solution|syrup|suspension|elixir|liquid|concentrate|drops/.test(f)) return 'Oral Solution';
+  if (/granule|powder|packet/.test(f)) return 'Oral Powder / Granules';
+  return 'Oral';
+}
+
+function extractStrengthFromNdcRecord(r) {
+  if (!Array.isArray(r.active_ingredients) || r.active_ingredients.length === 0) return null;
+
+  const isMixedAmphetamine =
+    r.active_ingredients.length >= 2 &&
+    r.active_ingredients.every(ai => (ai.name || '').toLowerCase().includes('amphetamine'));
+
+  if (isMixedAmphetamine) {
+    let totalMg = 0;
+    let valid = true;
+    for (const ai of r.active_ingredients) {
+      const m = String(ai.strength || '').match(/(\d+(?:\.\d+)?)\s*mg/i);
+      if (!m) {
+        valid = false;
+        break;
+      }
+      totalMg += Number.parseFloat(m[1]);
+    }
+    if (valid && totalMg > 0) {
+      return `${formatStrengthNumber(totalMg)} mg`;
+    }
+  }
+
+  const combined = r.active_ingredients
+    .map(ai =>
+      (ai.strength || '')
+        .toLowerCase()
+        .replace(/\/1\b/g, '')
+        .replace(/(^|[\s\/])\.(\d)/g, '$10.$2')
+        .replace(/\s+/g, ' ')
+        .trim()
+    )
+    .filter(Boolean)
+    .join(' / ');
+  return combined || null;
+}
+
+/**
+ * Group official FDA strengths strictly by their exact Dosage Form (e.g. Oral Tablet,
+ * Extended-Release Capsule, Oral Solution, Injectable) sorted ascending within each form.
+ */
+function extractDosageOptions(ndcResults) {
+  const formMap = new Map();
+  for (const r of (ndcResults || [])) {
+    const strength = extractStrengthFromNdcRecord(r);
+    if (!strength) continue;
+    const routeStr = Array.isArray(r.route) ? r.route.join(' ') : (r.route || '');
+    const formLabel = normalizeDosageFormLabel(r.dosage_form, routeStr);
+    if (!formMap.has(formLabel)) {
+      formMap.set(formLabel, new Set());
+    }
+    formMap.get(formLabel).add(strength);
+  }
+
+  const preferredOrder = [
+    'Oral Tablet',
+    'Extended-Release Tablet',
+    'Delayed-Release Tablet',
+    'Orally Disintegrating Tablet',
+    'Chewable Tablet',
+    'Oral Capsule',
+    'Extended-Release Capsule',
+    'Delayed-Release Capsule',
+    'Oral Solution',
+    'Oral Powder / Granules',
+    'Inhaler / Spray',
+    'Topical',
+    'Patch',
+    'Eye Drops',
+    'Ear Drops',
+    'Injectable',
+  ];
+
+  const ordered = [];
+  for (const form of preferredOrder) {
+    if (formMap.has(form)) {
+      ordered.push({
+        form,
+        strengths: [...formMap.get(form)].sort((a, b) => parseNumericStrength(a) - parseNumericStrength(b)),
+      });
+      formMap.delete(form);
+    }
+  }
+  for (const [form, set] of formMap.entries()) {
+    ordered.push({
+      form,
+      strengths: [...set].sort((a, b) => parseNumericStrength(a) - parseNumericStrength(b)),
+    });
+  }
+  return ordered;
+}
+
 /**
  * Extract clean, clinician-accurate total strengths from OpenFDA NDC results & RxNav concepts.
  * Handles mixed-salt medications (e.g. Mydayis / Adderall: 4 equal amphetamine salts summed to
- * 12.5 mg, 25 mg, 37.5 mg, 50 mg) and sorts numerically ascending.
+ * 12.5 mg, 25 mg, 37.5 mg, 50 mg), ignores bare container volumes (e.g. "1 ML"), and sorts numerically ascending.
  */
 function extractCleanStrengths(ndcResults, rxConcepts = []) {
   const strengthSet = new Set();
 
   for (const r of ndcResults) {
-    if (!Array.isArray(r.active_ingredients) || r.active_ingredients.length === 0) continue;
-
-    // Detect mixed-salt amphetamine / multi-salt formulations where each salt is a fraction of total mg
-    const isMixedAmphetamine =
-      r.active_ingredients.length >= 2 &&
-      r.active_ingredients.every(ai => (ai.name || '').toLowerCase().includes('amphetamine'));
-
-    if (isMixedAmphetamine) {
-      let totalMg = 0;
-      let valid = true;
-      for (const ai of r.active_ingredients) {
-        const m = String(ai.strength || '').match(/(\d+(?:\.\d+)?)\s*mg/i);
-        if (!m) {
-          valid = false;
-          break;
-        }
-        totalMg += Number.parseFloat(m[1]);
-      }
-      if (valid && totalMg > 0) {
-        strengthSet.add(`${formatStrengthNumber(totalMg)} mg`);
-        continue;
-      }
-    }
-
-    const combined = r.active_ingredients
-      .map(ai =>
-        (ai.strength || '')
-          .toLowerCase()
-          .replace(/\/1\b/g, '')
-          .replace(/(^|[\s\/])\.(\d)/g, '$10.$2')
-          .replace(/\s+/g, ' ')
-          .trim()
-      )
-      .filter(Boolean)
-      .join(' / ');
-    if (combined) {
-      strengthSet.add(combined);
-    }
+    const s = extractStrengthFromNdcRecord(r);
+    if (s) strengthSet.add(s);
   }
 
-  // Cross-check NLM RxNav SBD/SCD concepts to catch any strengths missing from NDC sample
+  // Cross-check NLM RxNav SBD/SCD concepts to catch any strengths missing from NDC sample.
+  // NOTE: Strictly match real dose/concentration units (MG, MCG, G, %, UNT, MG/ML, etc.) —
+  // NEVER bare container volumes like "1 ML" or "3 ML" from "1 ML propranolol 1 MG/ML Injection"!
+  const rxStrengthRegex = /\b(\d*(?:\.\d+)?\s*(?:MG|MCG|G|%|UNT)(?:\s*\/\s*\d*(?:\.\d+)?\s*(?:ML|MG|G|ACTUAT))?)\b/i;
+
   for (const prop of rxConcepts) {
     const name = prop.name || '';
     if (name.toLowerCase().includes('amphetamine') && name.includes('/')) {
@@ -842,7 +1196,23 @@ function extractCleanStrengths(ndcResults, rxConcepts = []) {
         continue;
       }
     }
-    const m = name.match(/\b(\d*(?:\.\d+)?\s*(?:MG|MCG|ML|G|%)(?:\s*\/\s*\d*(?:\.\d+)?\s*(?:ML|MG|ACTUAT))?)\b/i);
+    if (isMultiIngredientRxNormName(name)) {
+      const parts = name.split(/\s\/\s/).map(part => {
+        const pm = part.match(rxStrengthRegex);
+        if (!pm) return null;
+        const norm = pm[1]
+          .toLowerCase()
+          .replace(/(^|[\s\/])\.(\d)/g, '$10.$2')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return /^\d/.test(norm) ? norm : null;
+      }).filter(Boolean);
+      if (parts.length >= 2) {
+        strengthSet.add(parts.join(' / '));
+      }
+      continue;
+    }
+    const m = name.match(rxStrengthRegex);
     if (m) {
       const norm = m[1]
         .toLowerCase()
@@ -869,6 +1239,7 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
   const clean = String(rawQuery || '').replace(/[^a-zA-Z0-9\s\-]/g, '').trim();
   if (clean.length < 3 || clean.length > 80) return null;
 
+  const cleanLower = clean.toLowerCase();
   const term = encodeURIComponent(`"${clean}"`);
   // 1. Resolve canonical brand/generic/strengths via OpenFDA NDC (up to 100 finished products) + RxNav
   let [ndcData, rxData] = await Promise.all([
@@ -877,6 +1248,17 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
     ),
     fetchJsonSafe(`https://rxnav.nlm.nih.gov/REST/drugs.json?name=${encodeURIComponent(clean)}`),
   ]);
+
+  // Extract authoritative RxNorm exact-brand SBD ingredients if the user searched a brand name
+  // (e.g. Flomax -> SBD "... [Flomax]" -> ['tamsulosin']; Jalyn -> SBD "... [Jalyn]" -> ['dutasteride', 'tamsulosin'])
+  let expectedIngredients = [];
+  const allInitialRxConcepts = (rxData?.drugGroup?.conceptGroup || [])
+    .filter(g => g.tty === 'SBD' || g.tty === 'SCD' || g.tty === 'BPCK')
+    .flatMap(g => g.conceptProperties || []);
+  const exactRxBrandSbd = allInitialRxConcepts.find(p => extractRxNormBrand(p.name) === cleanLower);
+  if (exactRxBrandSbd?.rxcui) {
+    expectedIngredients = await fetchRxNormIngredients(exactRxBrandSbd.rxcui);
+  }
 
   // Fallback: unquoted token search if exact phrase missed
   if (!ndcData?.results?.length) {
@@ -887,53 +1269,105 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
   }
 
   // Fallback 2: Discontinued legacy brand names (e.g., Glucophage -> metformin, Prinivil -> lisinopril, Flomax -> tamsulosin)
-  // Resolve the legacy brand via RxNav rxcui -> ingredient (IN), then pull active generic NDCs!
+  // Resolve the legacy brand via RxNav SBD/BN -> exact Ingredient (IN) set, then pull active generic NDCs!
   let legacyBrandAlias = null;
   if (!ndcData?.results?.length) {
-    const rxcuiLookup = await fetchJsonSafe(
-      `https://rxnav.nlm.nih.gov/REST/rxcui.json?name=${encodeURIComponent(clean)}&search=2`
-    );
-    const candidateId = rxcuiLookup?.idGroup?.rxnormId?.[0];
-    if (candidateId) {
-      const ingNames = await fetchRxNormIngredients(candidateId);
-      if (ingNames.length > 0) {
-        legacyBrandAlias = toTitleCase(clean);
-        const ingTerm = encodeURIComponent(`"${ingNames[0]}"`);
-        ndcData = await fetchJsonSafe(
-          `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+generic_name:${ingTerm}&limit=100`
+    let ingNames = expectedIngredients;
+    if (ingNames.length === 0) {
+      const rxcuiLookup = await fetchJsonSafe(
+        `https://rxnav.nlm.nih.gov/REST/rxcui.json?name=${encodeURIComponent(clean)}&search=2`
+      );
+      const candidateId = rxcuiLookup?.idGroup?.rxnormId?.[0];
+      if (candidateId) {
+        ingNames = await fetchRxNormIngredients(candidateId);
+      }
+    }
+    if (ingNames.length > 0) {
+      expectedIngredients = ingNames;
+      legacyBrandAlias = toTitleCase(clean);
+      const ndcSearchClause = ingNames
+        .map(ing => `generic_name:${encodeURIComponent(`"${ing}"`)}`)
+        .join('+AND+');
+      ndcData = await fetchJsonSafe(
+        `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+${ndcSearchClause}&limit=100`
+      );
+      if (!rxData?.drugGroup?.conceptGroup?.length) {
+        rxData = await fetchJsonSafe(
+          `https://rxnav.nlm.nih.gov/REST/drugs.json?name=${encodeURIComponent(ingNames.join(' '))}`
         );
-        if (!rxData?.drugGroup?.conceptGroup?.length) {
-          rxData = await fetchJsonSafe(
-            `https://rxnav.nlm.nih.gov/REST/drugs.json?name=${encodeURIComponent(ingNames[0])}`
-          );
-        }
       }
     }
   }
 
-  const results = ndcData?.results || [];
-  if (results.length === 0) return null;
+  const rawResults = ndcData?.results || [];
+  if (rawResults.length === 0) {
+    // Fallback 3: Official NLM RxNav spelling suggestions for minor typos (e.g. "pramapexole" -> "pramipexole")
+    if (!options._fromSpellingSuggestion) {
+      const spellData = await fetchJsonSafe(
+        `https://rxnav.nlm.nih.gov/REST/spellingsuggestions.json?name=${encodeURIComponent(clean)}`
+      );
+      const suggestion = spellData?.suggestionGroup?.suggestionList?.suggestion?.[0];
+      if (suggestion && suggestion.toLowerCase() !== cleanLower) {
+        return discoverAndIngestDrug(db, suggestion, { ...options, _fromSpellingSuggestion: true });
+      }
+    }
+    return null;
+  }
 
-  const rxConcepts = (rxData?.drugGroup?.conceptGroup || [])
-    .filter(g => g.tty === 'SBD' || g.tty === 'SCD')
-    .flatMap(g => g.conceptProperties || []);
-
-  // Pick the best canonical match:
-  // 1. Prefer exact brand match + Prescription NDA/BLA (avoiding OTC variants like "Prilosec Otc")
-  // 2. If user searched an exact single-ingredient generic name (e.g. "Omeprazole"), prefer exact generic
-  //    match so we NEVER hijack it with a multi-ingredient combo NDA like "Talicia" (omeprazole+amoxicillin+rifabutin)!
-  const cleanLower = clean.toLowerCase();
   const isRx = (r) => (r.product_type || '').toUpperCase().includes('PRESCRIPTION');
   const isNdaOrBla = (r) => r.marketing_category === 'NDA' || r.marketing_category === 'BLA';
   const isExactBrand = (r) => (r.brand_name || '').trim().toLowerCase() === cleanLower;
   const isExactGeneric = (r) => (r.generic_name || '').trim().toLowerCase() === cleanLower;
 
+  // If no RxNorm brand SBD was matched AND there is no distinct brand match
+  // (where normalized brand_name !== normalized generic_name — e.g. "Propranolol" vs "Propranolol Hydrochloride"
+  // is the same generic drug, NOT a distinct brand!), derive expectedIngredients from the query so
+  // multi-ingredient combos (e.g. Jalyn, Talicia, Inderide) can NEVER pollute a single-ingredient generic search!
+  const isDistinctBrand = (r) =>
+    isExactBrand(r) &&
+    normalizeIngredientName(r.brand_name) !== normalizeIngredientName(r.generic_name);
+
+  if (expectedIngredients.length === 0 && !rawResults.some(isDistinctBrand)) {
+    const queryIngredients = parseExpectedIngredients(clean);
+    if (
+      queryIngredients.length > 0 &&
+      rawResults.some(r => matchesExpectedIngredients(r.active_ingredients, queryIngredients))
+    ) {
+      expectedIngredients = queryIngredients;
+    }
+  }
+
+  // Strictly filter OpenFDA NDC candidates to the exact active ingredient count & moieties!
+  // For Flomax (['tamsulosin']), this eliminates Jalyn (['dutasteride', 'tamsulosin']) BEFORE
+  // primary selection AND BEFORE strength extraction!
+  const ingredientMatchedResults =
+    expectedIngredients.length > 0
+      ? rawResults.filter(r => matchesExpectedIngredients(r.active_ingredients, expectedIngredients))
+      : rawResults;
+  const results = ingredientMatchedResults.length > 0 ? ingredientMatchedResults : rawResults;
+
+  const rawRxConcepts = (rxData?.drugGroup?.conceptGroup || [])
+    .filter(g => g.tty === 'SBD' || g.tty === 'SCD')
+    .flatMap(g => g.conceptProperties || []);
+  const rxConcepts =
+    expectedIngredients.length > 0
+      ? filterRxNormConcepts(rawRxConcepts, {
+          brandName: legacyBrandAlias || (exactRxBrandSbd ? clean : null),
+          expectedIngredients,
+        })
+      : rawRxConcepts;
+
+  // Pick the best canonical match from the ingredient-verified candidate set:
+  // 1. Prefer exact brand match + Prescription NDA/BLA (avoiding OTC variants like "Prilosec Otc")
+  // 2. If user searched an exact generic name (e.g. "Omeprazole", "Tamsulosin"), prefer exact generic match
+  // 3. For legacy brands (where brand NDA is discontinued), prefer Rx NDA/BLA or Rx ANDA within the exact ingredient set
   const primary =
     results.find(r => isRx(r) && isNdaOrBla(r) && isExactBrand(r)) ||
     results.find(r => isRx(r) && isExactGeneric(r) && isNdaOrBla(r)) ||
     results.find(r => isRx(r) && isExactGeneric(r)) ||
     results.find(r => isRx(r) && isNdaOrBla(r)) ||
     results.find(r => isRx(r) && isExactBrand(r)) ||
+    results.find(r => isRx(r)) ||
     results.find(r => isNdaOrBla(r)) ||
     results[0];
 
@@ -947,20 +1381,57 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
   const drugType = (primary.marketing_category || '').includes('BLA') ? 'biologic' : 'small_molecule';
   const dosageForm = primary.dosage_form ? primary.dosage_form.toLowerCase() : null;
 
-  // Deduplicate ALL official strengths cleanly (sorted ascending, summing mixed salts accurately)
-  const allStrengths = extractCleanStrengths(results, rxConcepts);
-  const combinedStrengths = allStrengths.slice(0, 12).join(', ') || null;
+  // For unbranded generic searches, extract known FDA/RxNorm reference brand names
+  // (e.g. propranolol -> ["Inderal", "Inderal LA", "Hemangeol"], tamsulosin -> ["Flomax"])
+  // strictly from ingredient-verified RxNorm SBDs and OpenFDA NDAs!
+  const referenceBrandSet = new Map(); // lower -> display Title Case
+  if (!canonicalBrand) {
+    const genNorm = normalizeIngredientName(canonicalGeneric);
+    const addRefBrand = (raw) => {
+      if (!raw) return;
+      const trimmed = String(raw).trim();
+      if (trimmed.length < 3 || trimmed.length > 40) return;
+      const norm = normalizeIngredientName(trimmed);
+      if (!norm || norm === genNorm || trimmed.toLowerCase() === canonicalGeneric) return;
+      const key = trimmed.toLowerCase();
+      if (!referenceBrandSet.has(key)) {
+        referenceBrandSet.set(key, toTitleCase(trimmed));
+      }
+    };
+    for (const p of rxConcepts) {
+      const m = String(p.name || '').match(/\[([^\]]+)\]\s*$/);
+      if (m) addRefBrand(m[1]);
+    }
+    for (const r of results) {
+      if ((r.marketing_category === 'NDA' || r.marketing_category === 'BLA') && r.brand_name) {
+        addRefBrand(r.brand_name);
+      }
+    }
+  }
+  const referenceBrands = [...referenceBrandSet.values()].slice(0, 5);
 
-  // Check if this canonical drug already exists (match by brand_name when present so distinct brands
-  // sharing ingredients like Mydayis vs Adderall XR never collide!)
-  const existing = canonicalBrand
-    ? db.prepare('SELECT * FROM drugs WHERE LOWER(brand_name) = LOWER(?)').get(canonicalBrand)
-    : db.prepare('SELECT * FROM drugs WHERE brand_name IS NULL AND LOWER(generic_name) = LOWER(?)').get(canonicalGeneric);
+  // Deduplicate ALL official strengths cleanly (strictly from ingredient-matched results & RxNorm concepts!)
+  // and build exact FDA Dosage Form -> Strengths groups so multi-form drugs (e.g. propranolol) never lose oral doses!
+  const dosageOptions = extractDosageOptions(results);
+  const allStrengths = extractCleanStrengths(results, rxConcepts);
+  const combinedStrengths = allStrengths.slice(0, 30).join(', ') || null;
+
+  // Check if this canonical drug already exists (prefer explicit rxcui on forceRefresh,
+  // otherwise match by brand_name when present so distinct brands never collide!)
+  const existing = (options.rxcui ? db.prepare('SELECT * FROM drugs WHERE rxcui = ?').get(String(options.rxcui)) : null) ||
+    (canonicalBrand
+      ? db.prepare('SELECT * FROM drugs WHERE LOWER(brand_name) = LOWER(?)').get(canonicalBrand)
+      : db.prepare('SELECT * FROM drugs WHERE brand_name IS NULL AND LOWER(generic_name) = LOWER(?)').get(canonicalGeneric));
 
   if (existing && !options.forceRefresh) {
     if (combinedStrengths && combinedStrengths.length > (existing.strength || '').length) {
-      db.prepare("UPDATE drugs SET strength = ?, updated_at = datetime('now') WHERE id = ?")
-        .run(combinedStrengths, existing.id);
+      db.prepare("UPDATE drugs SET strength = ?, dosage_options = COALESCE(?, dosage_options), reference_brands = COALESCE(?, reference_brands), updated_at = datetime('now') WHERE id = ?")
+        .run(
+          combinedStrengths,
+          dosageOptions.length > 0 ? JSON.stringify(dosageOptions) : null,
+          referenceBrands.length > 0 ? JSON.stringify(referenceBrands) : null,
+          existing.id
+        );
       return db.prepare('SELECT * FROM drugs WHERE id = ?').get(existing.id);
     }
     return existing;
@@ -973,11 +1444,15 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
     db.prepare('DELETE FROM alert_events WHERE drug_id = ?').run(existing.id);
   }
   const ingestRes = await ingestLiveDrug(db, {
+    rxcui: existing?.rxcui,
     brand_name: canonicalBrand,
     generic_name: canonicalGeneric,
+    expected_ingredients: expectedIngredients.length > 0 ? expectedIngredients : undefined,
     drug_type: drugType,
     dosage_form: dosageForm,
     strength: combinedStrengths,
+    dosage_options: dosageOptions,
+    reference_brands: referenceBrands,
   });
 
   if (ingestRes.skipped || !ingestRes.rxcui) return null;
@@ -998,4 +1473,11 @@ module.exports = {
   ingestLiveDrug,
   ingestLiveShortages,
   discoverAndIngestDrug,
+  normalizeIngredientName,
+  parseExpectedIngredients,
+  matchesExpectedIngredients,
+  isMultiIngredientRxNormName,
+  extractRxNormBrand,
+  filterRxNormConcepts,
+  matchesNadacIngredientProfile,
 };

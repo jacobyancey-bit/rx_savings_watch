@@ -84,7 +84,7 @@ function createDrugsRouter(db) {
     WHERE brand_name LIKE ? ESCAPE '\\'
        OR generic_name LIKE ? ESCAPE '\\'
        OR rxcui LIKE ? ESCAPE '\\'
-    ORDER BY brand_name ASC
+    ORDER BY LOWER(COALESCE(NULLIF(TRIM(brand_name), ''), generic_name)) ASC
     LIMIT ? OFFSET ?
   `);
 
@@ -218,7 +218,7 @@ function createDrugsRouter(db) {
     ) {
       const clientIp = req.ip || 'unknown';
       if (canRunLiveDiscoveryForIp(clientIp)) {
-        discoverAndIngestDrug(db, drug.brand_name || drug.generic_name, { forceRefresh: true })
+        discoverAndIngestDrug(db, drug.brand_name || drug.generic_name, { forceRefresh: true, rxcui: drug.rxcui })
           .catch(err => console.error('[DrugsRouter] Flag-triggered refresh error:', err.message));
       }
     }

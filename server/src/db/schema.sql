@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS drugs (
     active_ingredient TEXT,
     dosage_form TEXT,
     strength TEXT,
+    dosage_options TEXT,
+    reference_brands TEXT,
     route TEXT,
     drug_type TEXT CHECK(drug_type IN ('small_molecule', 'biologic')) DEFAULT 'small_molecule',
     created_at TEXT DEFAULT (datetime('now')),

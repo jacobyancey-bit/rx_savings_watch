@@ -1,6 +1,9 @@
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const express = require('express');
 const config = require('../config');
+const { seedMissingDrugs } = require('../ingestion/live_feeds');
 
 function safeKeyEquals(provided, expected) {
   if (typeof provided !== 'string' || typeof expected !== 'string') return false;
@@ -81,6 +84,45 @@ function createSchedulerRouter(scheduler) {
         error: 'Internal Server Error'
       });
     }
+  });
+
+  let isSeeding = false;
+
+  router.post('/admin/seed-missing', requireAdminAuth, (req, res) => {
+    if (isSeeding) {
+      return res.status(202).json({
+        success: true,
+        status: 'already_running',
+        message: 'Incremental seed is already running in the background.',
+      });
+    }
+
+    const candidates = [
+      path.resolve(__dirname, '../../seed/live_seed_drugs.json'),
+      path.resolve(__dirname, '../../data/live_seed_drugs.json'),
+    ];
+    const seedPath = candidates.find(p => fs.existsSync(p));
+    if (!seedPath) {
+      return res.status(404).json({ error: 'Seed list not found' });
+    }
+
+    const seedList = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+    isSeeding = true;
+    seedMissingDrugs(scheduler.db, seedList, { delayMs: 350 })
+      .then(summary => {
+        console.log(`[Admin Seed] Complete: ${summary.seeded}/${summary.missingCount} new drugs added.`);
+      })
+      .catch(err => console.error('[Admin Seed] Error:', err.message))
+      .finally(() => {
+        isSeeding = false;
+      });
+
+    return res.status(202).json({
+      success: true,
+      status: 'started',
+      seed_list_size: seedList.length,
+      message: 'Incremental background seeding started. Check /api/admin/stats for updated catalog count.',
+    });
   });
 
   return router;

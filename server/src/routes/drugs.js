@@ -97,7 +97,7 @@ function createDrugsRouter(db) {
 
   router.get('/drugs', async (req, res) => {
     const query = req.query.q ? String(req.query.q).trim().slice(0, 80) : '';
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
     const allowLive = req.query.live !== 'false' && process.env.NODE_ENV !== 'test';
 

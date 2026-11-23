@@ -47,7 +47,7 @@ class _SearchScreenState extends State<SearchScreen> {
     try {
       final provider = context.read<CabinetProvider>();
       final api = ApiService(baseUrl: provider.serverUrl);
-      final drugs = await api.getDrugs(limit: 100);
+      final drugs = await api.getDrugs(limit: 300);
       if (!mounted) return;
       setState(() {
         _allCatalogDrugs = drugs;

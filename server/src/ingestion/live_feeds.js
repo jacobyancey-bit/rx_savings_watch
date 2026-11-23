@@ -1468,8 +1468,76 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
   return savedDrug;
 }
 
+/**
+ * Incrementally seed ONLY missing drugs from a seed list (leaving existing rows untouched).
+ * Uses discoverAndIngestDrug so every newly seeded medication gets full FDA dosage_options,
+ * reference_brands, strict ingredient matching, and 2-signal generic launch evaluation.
+ */
+async function seedMissingDrugs(db, seedList, options = {}) {
+  const delayMs = options.delayMs ?? 350;
+  const maxPerRun = options.maxPerRun ?? seedList.length;
+
+  const existingRows = db.prepare('SELECT brand_name, generic_name FROM drugs').all();
+  const existingBrands = new Set(
+    existingRows.map(r => (r.brand_name || '').trim().toLowerCase()).filter(Boolean)
+  );
+  const existingUnbrandedGenerics = new Set(
+    existingRows
+      .filter(r => !r.brand_name || !r.brand_name.trim())
+      .map(r => normalizeIngredientName(r.generic_name))
+      .filter(Boolean)
+  );
+
+  const missing = seedList.filter(seed => {
+    const b = (seed.brand_name || '').trim().toLowerCase();
+    if (b) return !existingBrands.has(b);
+    const gNorm = normalizeIngredientName(seed.generic_name);
+    return gNorm && !existingUnbrandedGenerics.has(gNorm);
+  }).slice(0, maxPerRun);
+
+  const summary = {
+    totalInSeedList: seedList.length,
+    missingCount: missing.length,
+    seeded: 0,
+    skipped: 0,
+    errors: 0,
+  };
+
+  if (missing.length === 0) return summary;
+
+  for (let i = 0; i < missing.length; i++) {
+    const seed = missing[i];
+    const query = (seed.brand_name || seed.generic_name || '').trim();
+    if (!query) continue;
+    try {
+      const saved = await discoverAndIngestDrug(db, query);
+      if (saved) {
+        summary.seeded++;
+      } else {
+        summary.skipped++;
+      }
+    } catch (err) {
+      summary.errors++;
+      console.error(`[SeedMissing] Error seeding "${query}":`, err.message);
+    }
+    if (delayMs > 0 && i < missing.length - 1) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+
+  recordIngestionRun(db, {
+    feedName: 'incremental_seed',
+    status: summary.errors === 0 ? 'success' : 'warning',
+    recordsProcessed: summary.seeded,
+    notes: `seeded=${summary.seeded}/${summary.missingCount} missing (skipped=${summary.skipped}, errors=${summary.errors})`,
+  });
+
+  return summary;
+}
+
 module.exports = {
   runLiveIngestion,
+  seedMissingDrugs,
   ingestLiveDrug,
   ingestLiveShortages,
   discoverAndIngestDrug,

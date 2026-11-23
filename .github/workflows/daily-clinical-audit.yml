@@ -32,12 +32,13 @@ jobs:
       - name: Run server unit tests
         run: npm --prefix server test
 
-      - name: Run 42-drug Golden Clinical Regression Suite
+      - name: Run 49-drug Golden Clinical Regression Suite + Full Live Catalog Audit
         id: clinical
         continue-on-error: true
         run: |
           set -o pipefail
           npm --prefix server run test:clinical 2>&1 | tee clinical-report.log
+          npm --prefix server run audit:live 2>&1 | tee -a clinical-report.log
 
       - name: Open GitHub Issue alert if any drug status changed or failed
         if: steps.clinical.outcome == 'failure'

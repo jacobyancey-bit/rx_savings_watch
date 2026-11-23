@@ -1260,18 +1260,32 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
     expectedIngredients = await fetchRxNormIngredients(exactRxBrandSbd.rxcui);
   }
 
+  // Helper: verify that an OpenFDA NDC payload actually contains at least one product
+  // matching expectedIngredients (e.g. searching "Micardis" returns only 2-ingredient
+  // "Micardis HCT" in active NDCs, so we must trigger Fallback 2 for single-ingredient telmisartan!)
+  const hasIngredientMatchingNdc = (payload) => {
+    const list = payload?.results || [];
+    if (list.length === 0) return false;
+    if (expectedIngredients.length === 0) return true;
+    return list.some(r => matchesExpectedIngredients(r.active_ingredients, expectedIngredients));
+  };
+
   // Fallback: unquoted token search if exact phrase missed
-  if (!ndcData?.results?.length) {
+  if (!hasIngredientMatchingNdc(ndcData)) {
     const loose = encodeURIComponent(clean.split(' ')[0]);
-    ndcData = await fetchJsonSafe(
+    const looseData = await fetchJsonSafe(
       `https://api.fda.gov/drug/ndc.json?search=finished:true+AND+(brand_name:${loose}+OR+generic_name:${loose})&limit=100`
     );
+    if (hasIngredientMatchingNdc(looseData)) {
+      ndcData = looseData;
+    }
   }
 
-  // Fallback 2: Discontinued legacy brand names (e.g., Glucophage -> metformin, Prinivil -> lisinopril, Flomax -> tamsulosin)
+  // Fallback 2: Discontinued legacy brand names (e.g., Glucophage -> metformin, Prinivil -> lisinopril,
+  // Flomax -> tamsulosin, Micardis -> telmisartan where only Micardis HCT remains in active NDCs)
   // Resolve the legacy brand via RxNav SBD/BN -> exact Ingredient (IN) set, then pull active generic NDCs!
   let legacyBrandAlias = null;
-  if (!ndcData?.results?.length) {
+  if (!hasIngredientMatchingNdc(ndcData)) {
     let ingNames = expectedIngredients;
     if (ingNames.length === 0) {
       const rxcuiLookup = await fetchJsonSafe(
@@ -1320,12 +1334,17 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
   const isExactGeneric = (r) => (r.generic_name || '').trim().toLowerCase() === cleanLower;
 
   // If no RxNorm brand SBD was matched AND there is no distinct brand match
-  // (where normalized brand_name !== normalized generic_name — e.g. "Propranolol" vs "Propranolol Hydrochloride"
-  // is the same generic drug, NOT a distinct brand!), derive expectedIngredients from the query so
-  // multi-ingredient combos (e.g. Jalyn, Talicia, Inderide) can NEVER pollute a single-ingredient generic search!
-  const isDistinctBrand = (r) =>
-    isExactBrand(r) &&
-    normalizeIngredientName(r.brand_name) !== normalizeIngredientName(r.generic_name);
+  // (where brand_name is NOT itself one of the generic ingredients — e.g. "Propranolol" vs
+  // "Propranolol Hydrochloride" or "Ibuprofen" vs "Ibuprofen and Diphenhydramine" is a generic search,
+  // NOT a distinct brand!), derive expectedIngredients from the query so multi-ingredient combos
+  // (e.g. Jalyn, Talicia, Inderide, OTC ibuprofen cold combos) can NEVER pollute a single-ingredient generic!
+  const isDistinctBrand = (r) => {
+    if (!isRx(r) || !isNdaOrBla(r) || !isExactBrand(r)) return false;
+    const brandNorm = normalizeIngredientName(r.brand_name);
+    const genIngs = parseExpectedIngredients(r.generic_name);
+    if (genIngs.length === 0) return false;
+    return brandNorm && !genIngs.some(g => ingredientTokensMatch(g, brandNorm));
+  };
 
   if (expectedIngredients.length === 0 && !rawResults.some(isDistinctBrand)) {
     const queryIngredients = parseExpectedIngredients(clean);

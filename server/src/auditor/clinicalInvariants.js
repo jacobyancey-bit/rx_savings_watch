@@ -29,6 +29,26 @@ function findComboStrengthTokens(strengthStr) {
     .filter(token => /\s\/\s/.test(token));
 }
 
+const FORM_QUALIFIER_TOKENS = new Set([
+  'human',
+  'pork',
+  'bovine',
+  'macrocrystalline',
+  'microcrystalline',
+  'monohydrate',
+  'anhydrous',
+  'recombinant',
+]);
+
+function parseAuditIngredients(str) {
+  return parseExpectedIngredients(str).filter(tok => !FORM_QUALIFIER_TOKENS.has(tok));
+}
+
+function isDualReleaseSingleDrug(generic) {
+  const g = String(generic || '').toLowerCase();
+  return g.includes('nitrofurantoin') && g.includes('macrocrystalline');
+}
+
 /**
  * Audit a single drug record (with optional market_availability rows) against clinical invariants.
  * Returns { errors: string[], warnings: string[] }.
@@ -57,8 +77,8 @@ function auditDrugRecord(drug, { marketRows = [] } = {}) {
   }
 
   // Invariant 2: Ingredient-count parity between generic_name and RxNorm active_ingredient
-  const genericIngs = parseExpectedIngredients(generic);
-  const rxIngs = parseExpectedIngredients(activeIng);
+  const genericIngs = parseAuditIngredients(generic);
+  const rxIngs = parseAuditIngredients(activeIng);
   const bothMixedAmp = isMixedAmphetamineList(genericIngs) && isMixedAmphetamineList(rxIngs);
 
   if (genericIngs.length > 0 && rxIngs.length > 0 && !bothMixedAmp) {
@@ -71,8 +91,9 @@ function auditDrugRecord(drug, { marketRows = [] } = {}) {
   }
 
   // Invariant 3: Single-ingredient drugs must NEVER carry multi-ingredient "a / b" strength tokens
+  // (except legitimate dual-release single-ingredient formulations like Macrobid 25 mg / 75 mg)
   const canonicalCount = rxIngs.length > 0 ? rxIngs.length : genericIngs.length;
-  if (canonicalCount === 1 && !isMixedAmphetamineList(genericIngs)) {
+  if (canonicalCount === 1 && !isMixedAmphetamineList(genericIngs) && !isDualReleaseSingleDrug(generic)) {
     const comboTokens = findComboStrengthTokens(drug.strength);
     if (comboTokens.length > 0) {
       errors.push(

@@ -140,6 +140,7 @@ function createSeoRouter(db) {
     const urls = [
       `  <url><loc>${SITE_ORIGIN}/</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>`,
       `  <url><loc>${SITE_ORIGIN}/medications</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`,
+      `  <url><loc>${SITE_ORIGIN}/partners</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>`,
     ];
 
     for (const d of drugs) {

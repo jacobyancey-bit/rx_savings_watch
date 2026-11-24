@@ -195,3 +195,24 @@ CREATE TABLE IF NOT EXISTS daily_stats (
     api_searches INTEGER NOT NULL DEFAULT 0,
     cabinet_syncs INTEGER NOT NULL DEFAULT 0
 );
+
+-- 8. B2B Pharmacy & Clinic Partner Directory (Public business listings only; zero patient PHI)
+CREATE TABLE IF NOT EXISTS b2b_partners (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_name TEXT NOT NULL,
+    business_type TEXT NOT NULL DEFAULT 'pharmacy' CHECK(business_type IN ('pharmacy', 'clinic', 'senior_care')),
+    contact_name TEXT NOT NULL,
+    contact_email TEXT NOT NULL,
+    phone TEXT,
+    address TEXT,
+    website_url TEXT,
+    transfer_url TEXT,
+    tagline TEXT,
+    zip_codes TEXT NOT NULL DEFAULT '', -- Comma-separated 5-digit U.S. ZIP codes
+    plan_tier TEXT NOT NULL DEFAULT 'pilot_60d',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'active', 'paused')),
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_b2b_partners_status ON b2b_partners(status);

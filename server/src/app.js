@@ -12,6 +12,7 @@ const { createPushRouter } = require('./routes/push');
 const { createReviewsRouter } = require('./routes/reviews');
 const { createStatsRouter, recordDailyMetric, isLikelyBot } = require('./routes/stats');
 const { createSeoRouter } = require('./routes/seo');
+const { createB2bRouter } = require('./routes/b2b');
 const { IngestionScheduler } = require('./scheduler');
 
 /**
@@ -105,6 +106,7 @@ function createApp(db, options = {}) {
   app.use('/api', createPushRouter(db));
   app.use('/api', createReviewsRouter(db, { enableRateLimiter }));
   app.use('/api', createStatsRouter(db));
+  app.use('/', createB2bRouter(db));
 
   // Catch-all 404 for unknown /api/* routes (prevents info leakage)
   app.use('/api', (req, res) => {

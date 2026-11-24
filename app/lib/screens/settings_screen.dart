@@ -1,18 +1,21 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/link.dart';
 import '../config/partner_links.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/web_push_service.dart';
+import '../widgets/legal_policy_sheet.dart';
 import '../widgets/privacy_promise_sheet.dart';
 import '../widgets/review_sheet.dart';
 import '../widgets/transfer_cabinet_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  final bool embedded;
+
+  const SettingsScreen({super.key, this.embedded = false});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -123,6 +126,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: !widget.embedded,
         title: const Text('Settings & Privacy'),
         elevation: 0,
       ),
@@ -399,37 +403,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   leading: const Icon(Icons.privacy_tip_outlined),
                   title: const Text('Privacy Policy'),
-                  trailing: const Icon(Icons.open_in_new, size: 18),
-                  onTap: () async {
-                    await launchUrl(
-                      Uri.parse(PartnerLinks.privacyPolicyUrl),
-                      mode: LaunchMode.externalApplication,
-                    );
-                  },
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => LegalPolicySheet.showPrivacyPolicy(context),
                 ),
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.description_outlined),
                   title: const Text('Terms of Service'),
-                  trailing: const Icon(Icons.open_in_new, size: 18),
-                  onTap: () async {
-                    await launchUrl(
-                      Uri.parse(PartnerLinks.termsOfServiceUrl),
-                      mode: LaunchMode.externalApplication,
-                    );
-                  },
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => LegalPolicySheet.showTermsOfService(context),
                 ),
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.medical_information_outlined),
                   title: const Text('Medical Disclaimer'),
-                  trailing: const Icon(Icons.open_in_new, size: 18),
-                  onTap: () async {
-                    await launchUrl(
-                      Uri.parse(PartnerLinks.termsOfServiceUrl),
-                      mode: LaunchMode.externalApplication,
-                    );
-                  },
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => LegalPolicySheet.showMedicalDisclaimer(context),
                 ),
               ],
             ),
@@ -471,17 +460,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(height: 12),
                   SizedBox(
                     height: 48,
-                    child: FilledButton.tonalIcon(
-                      onPressed: () async {
-                        await launchUrl(
-                          Uri.parse(PartnerLinks.tipJarUrl),
-                          mode: LaunchMode.externalApplication,
-                        );
-                      },
-                      icon: const Icon(Icons.volunteer_activism_outlined),
-                      label: const Text(
-                        'Leave an Optional Tip',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                    child: Link(
+                      uri: Uri.parse(PartnerLinks.tipJarUrl),
+                      target: LinkTarget.blank,
+                      builder: (context, followLink) => FilledButton.tonalIcon(
+                        onPressed: followLink,
+                        icon: const Icon(Icons.volunteer_activism_outlined),
+                        label: const Text(
+                          'Leave an Optional Tip',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
                   ),

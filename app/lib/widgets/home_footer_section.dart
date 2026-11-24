@@ -1,7 +1,8 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/partner_links.dart';
+import 'legal_policy_sheet.dart';
+import 'privacy_promise_sheet.dart';
 import 'review_sheet.dart';
 
 /// Compact website-style bottom footer for the Home Screen.
@@ -38,33 +39,82 @@ class HomeFooterSection extends StatelessWidget {
             const SizedBox(height: 8),
             _buildFaqTile(
               theme,
-              'How do you verify whether a generic is really available?',
-              'We use a strict 2-signal verification check against official U.S. government databases. '
-                  'A generic is only marked "Available Now" when BOTH (1) the FDA Orange Book confirms a therapeutically '
-                  'equivalent generic or authorized generic for that exact brand formulation, AND (2) commercial pharmacy '
-                  'distribution is confirmed in CMS NADAC pricing, OpenFDA NDC, or NLM DailyMed labeling.',
+              'How does Rx Savings Watch work?',
+              'Add your prescriptions to your private cabinet to see whether a lower-cost FDA-approved generic is available, '
+                  'compare cash and pharmacy coupon prices, track refill dates, set daily dose reminders, and get alerts if a '
+                  'medication enters an FDA supply shortage.',
             ),
             const Divider(height: 1),
             _buildFaqTile(
               theme,
-              'Why don\'t I need an account? How do I move my list to my phone?',
-              'To protect your medical privacy, your medication cabinet is stored only on your own device—never on our servers. '
-                  'Tap "Transfer" next to your cabinet to scan a private QR code or send yourself a one-tap link. '
-                  'The link keeps your medication codes strictly in the # fragment, which browsers never send to any server.',
+              'How do I track when my prescriptions need a refill?',
+              'When you add a prescription (or tap "Track Refill" on any card), enter your last filled date, day supply '
+                  '(30, 60, or 90 days), and optionally how many refills remain. The app counts down your supply, highlights '
+                  'prescriptions due soon, warns you when 0 refills are left so you can contact your prescriber, and lets you '
+                  'reset the clock with one tap on "Mark Refilled."',
             ),
             const Divider(height: 1),
             _buildFaqTile(
               theme,
-              'Are my prescription lists or reminders ever uploaded?',
-              'Never. Your medication cabinet and reminders stay 100% on your own device and never touch our servers. '
-                  'Anonymous update checks also mix in decoy maintenance drug codes so network traffic cannot reveal your prescriptions.',
+              'How do the pharmacy coupons and cash prices work? Do I need insurance?',
+              'On any medication page, you can compare transparent cash pharmacies (like Cost Plus Drugs and Amazon Pharmacy) '
+                  'and free retail coupons (SingleCare, GoodRx, Optum Perks, and WellRx) with no account required. '
+                  'These are cash-pay discounts—not insurance—and cannot be combined with Medicare, Medicaid, or commercial insurance, '
+                  'though they are sometimes lower than an insurance copay.',
             ),
             const Divider(height: 1),
             _buildFaqTile(
               theme,
-              'Why might my pharmacy\'s price differ from the price shown?',
-              'Benchmark prices come from the federal CMS NADAC survey (what pharmacies pay to acquire a medication), '
-                  'not your specific insurance copay or retail markup. Use the verified Cash & Coupon buttons on each '
+              'How does the optional ZIP code work? Do you track my location?',
+              'No—we never ask for GPS location or use geofencing. Entering a 5-digit ZIP code on a medication page is completely '
+                  'optional, stays strictly on your own device (never sent to our servers), and is only used to pre-fill local '
+                  'retail pharmacy coupon links when you click them.',
+            ),
+            const Divider(height: 1),
+            _buildFaqTile(
+              theme,
+              'Can my pharmacist switch me to a generic automatically?',
+              'For most FDA-approved small-molecule generics, your pharmacist can usually substitute the generic automatically '
+                  'unless your doctor specified "Dispense as Written." Certain brand-name or biologic medications require a new '
+                  'prescription from your doctor. Tap "Show Doctor / Pharmacist Card" on any drug page for a clean handout to show at your visit.',
+            ),
+            const Divider(height: 1),
+            _buildFaqTile(
+              theme,
+              'Can I manage medications for a parent, spouse, or family member?',
+              'Yes. Open the Cabinets switcher in the sidebar (or tap the cabinet title on mobile) to create separate color-coded '
+                  'cabinets—such as "Mom" or "Dad." Each cabinet keeps its own prescriptions, OTC supplements, dose reminders, and refill dates completely separate.',
+            ),
+            const Divider(height: 1),
+            _buildFaqTile(
+              theme,
+              'What if my prescription or vitamin is not in the initial catalog?',
+              'Just type the medication name in Search—if it is not already in the top catalog, tap "Search Official FDA Databases" '
+                  'to look it up live from federal FDA and NLM RxNorm records (minor spelling typos are handled automatically). '
+                  'For vitamins or over-the-counter items, tap "Add OTC / Supplement" to track them privately on your device.',
+            ),
+            const Divider(height: 1),
+            _buildFaqTile(
+              theme,
+              'Why don\'t I need an account? How do I move my list to another device?',
+              'To protect your medical privacy, your medication cabinet, reminders, and refill dates are stored only on your own device—never on our servers. '
+                  'Tap "Transfer" to scan a private QR code or copy a one-tap transfer link. '
+                  'The link keeps medication codes strictly inside the # fragment, which browsers never send to any server.',
+            ),
+            const Divider(height: 1),
+            _buildFaqTile(
+              theme,
+              'How do you protect my medical privacy?',
+              'We collect zero personal data: no accounts, no cookies, no ad SDKs, and no behavioral analytics. '
+                  'Searches and partner lookups use POST bodies so drug names never appear in URL logs, update checks mix in decoy '
+                  'common medications (query chaffing), and you can erase all local data anytime in Settings.',
+            ),
+            const Divider(height: 1),
+            _buildFaqTile(
+              theme,
+              'Why might my pharmacy\'s price differ from the estimated cost shown?',
+              'Estimated brand vs. generic cost gaps come from the federal CMS NADAC survey (what pharmacies pay to acquire a medication), '
+                  'not your specific insurance copay or retail markup. Use the Cash & Pharmacy Price buttons on each '
                   'medication page to check live out-of-pocket prices.',
             ),
             const Divider(height: 1),
@@ -72,7 +122,7 @@ class HomeFooterSection extends StatelessWidget {
               theme,
               'Is Rx Savings Watch really free? How is it supported?',
               'Yes—100% free, with zero ads and zero data selling. Rx Savings Watch is built independently by '
-                  'Dangling Dice Studios™ and supported by optional referral fees on verified pharmacy links (at no cost to you) '
+                  'Dangling Dice Studios™ and supported by optional referral fees on pharmacy links (at no cost to you) '
                   'and an optional tip jar in Settings.',
             ),
           ],
@@ -123,18 +173,6 @@ class HomeFooterSection extends StatelessWidget {
     );
   }
 
-  void _showPolicySnackBar(BuildContext context, String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 6),
-      ),
-    );
-  }
-
   void _showDisclaimersSheet(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
@@ -170,9 +208,16 @@ class HomeFooterSection extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               _buildDisclaimerParagraph(
+                'Not Insurance & Cash-Pay Discounts: ',
+                'Rx Savings Watch is not health insurance and does not operate a pharmacy or Discount Medical Plan Organization (DMPO). '
+                    'Any pharmacy coupon or cash-price links apply to cash-pay transactions only and cannot be combined with Medicare, Medicaid, or commercial insurance.',
+                muted,
+              ),
+              const SizedBox(height: 12),
+              _buildDisclaimerParagraph(
                 'Affiliate & Transparency Disclosure: ',
                 'As an Amazon Associate I earn from qualifying purchases. Some verified pharmacy or savings links may earn Dangling Dice Studios™ '
-                    'a small referral fee at zero cost to you. No personal data is shared when you open an external link.',
+                    'a small referral fee at zero cost to you. External pharmacy sites are governed by their own privacy policies.',
                 muted,
               ),
             ],
@@ -300,24 +345,20 @@ class HomeFooterSection extends StatelessWidget {
               Text('•', style: TextStyle(color: muted, fontSize: 12)),
               _footerLink(
                 context,
+                'Health Data Notice',
+                () => PrivacyPromiseSheet.show(context),
+              ),
+              Text('•', style: TextStyle(color: muted, fontSize: 12)),
+              _footerLink(
+                context,
                 'Privacy',
-                () => kIsWeb
-                    ? _openUrl(PartnerLinks.privacyPolicyUrl)
-                    : _showPolicySnackBar(
-                        context,
-                        'Privacy: Zero personal data collected. Your medications and reminders stay 100% on this device and are never uploaded.',
-                      ),
+                () => LegalPolicySheet.showPrivacyPolicy(context),
               ),
               Text('•', style: TextStyle(color: muted, fontSize: 12)),
               _footerLink(
                 context,
                 'Terms',
-                () => kIsWeb
-                    ? _openUrl(PartnerLinks.termsOfServiceUrl)
-                    : _showPolicySnackBar(
-                        context,
-                        'Terms: Informational only — not medical advice. Always verify prescriptions, dosages, and generic substitutions with your doctor or pharmacist.',
-                      ),
+                () => LegalPolicySheet.showTermsOfService(context),
               ),
             ],
           ),

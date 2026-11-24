@@ -156,7 +156,25 @@ class PrivacyPromiseSheet extends StatelessWidget {
                 context,
                 icon: Icons.shuffle_outlined,
                 title: 'Anonymous Price & Generic Checks',
-                description: 'When checking for lower-cost generics, the app mixes your lookups with random common medicines so no one can tell which ones are yours.',
+                description: 'Searches and partner lookups are sent via POST bodies (never in URL query strings) and update checks mix in decoy common medicines. We use zero ad SDKs, zero analytics trackers, and zero cookies.',
+              ),
+              _buildPromiseRow(
+                context,
+                icon: Icons.location_off_outlined,
+                title: 'Optional ZIP Stays on Device',
+                description: 'If you enter a 5-digit ZIP code for local pharmacy coupons, it stays strictly in local device storage and is never sent to our servers. We never request GPS location or use geofencing.',
+              ),
+              _buildPromiseRow(
+                context,
+                icon: Icons.open_in_new_outlined,
+                title: 'External Pharmacy Links',
+                description: 'If you click an external pharmacy or coupon button (such as Cost Plus Drugs, Amazon Pharmacy, GoodRx, or SingleCare), your browser navigates directly to that third party under its own privacy policy.',
+              ),
+              _buildPromiseRow(
+                context,
+                icon: Icons.gavel_outlined,
+                title: 'Consumer Health Data Notice (WA / NV / US)',
+                description: 'We do not sell, share, or build profiles from consumer health data. All personal medication lists, reminders, and refill dates remain strictly on your device. Standard hosting infrastructure processes transient network traffic without storing personal profiles.',
               ),
               _buildPromiseRow(
                 context,

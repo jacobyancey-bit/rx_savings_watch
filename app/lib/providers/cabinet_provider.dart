@@ -4,6 +4,7 @@ import '../models/drug.dart';
 import '../models/medication_reminder.dart';
 import '../models/otc_supplement.dart';
 import '../models/patient_cabinet.dart';
+import '../models/refill_info.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
@@ -25,6 +26,7 @@ class CabinetProvider extends ChangeNotifier {
   bool _allowLaunchNotifs = true;
   bool _allowShortageNotifs = true;
   double _textScale = 1.0;
+  String? _localZipCode;
 
   CabinetProvider({
     StorageService? storageService,
@@ -51,6 +53,26 @@ class CabinetProvider extends ChangeNotifier {
   List<OtcSupplement> get supplements => List.unmodifiable(activeCabinet.supplements);
   Map<String, MedicationReminder> get reminders => Map.unmodifiable(activeCabinet.reminders);
   MedicationReminder? reminderFor(String rxcui) => activeCabinet.reminders[rxcui];
+  Map<String, RefillInfo> get refills => Map.unmodifiable(activeCabinet.refills);
+  RefillInfo? refillFor(String rxcui) => activeCabinet.refills[rxcui];
+
+  int get refillsTrackedCount => activeCabinet.refills.length;
+
+  int get refillsDueCount =>
+      activeCabinet.refills.values.where((r) => r.enabled && r.isDueOrOverdue()).length;
+
+  RefillInfo? get nextRefillDue {
+    final tracked = activeCabinet.refills.values.where((r) => r.enabled).toList();
+    if (tracked.isEmpty) return null;
+    tracked.sort((a, b) => a.daysRemaining().compareTo(b.daysRemaining()));
+    return tracked.first;
+  }
+
+  int get enabledRemindersCount =>
+      activeCabinet.reminders.values.where((r) => r.enabled).length;
+
+  int get takenTodayCount =>
+      activeCabinet.reminders.values.where((r) => r.enabled && r.isTakenToday()).length;
   bool get isLoading => _isLoading;
   bool get isSyncing => _isSyncing;
   String? get lastChecked => _lastChecked;
@@ -60,6 +82,7 @@ class CabinetProvider extends ChangeNotifier {
   bool get allowLaunchNotifs => _allowLaunchNotifs;
   bool get allowShortageNotifs => _allowShortageNotifs;
   double get textScale => _textScale;
+  String? get localZipCode => _localZipCode;
 
   String get textScaleLabel {
     if (_textScale >= 1.3) return 'Extra Large';
@@ -121,6 +144,7 @@ class CabinetProvider extends ChangeNotifier {
     _allowLaunchNotifs = await _storageService.getAllowLaunchNotifications();
     _allowShortageNotifs = await _storageService.getAllowShortageNotifications();
     _textScale = await _storageService.getTextScale();
+    _localZipCode = await _storageService.getLocalZipCode();
 
     final loadedCabinets = await _storageService.loadCabinets();
     _cabinets = loadedCabinets.isNotEmpty ? loadedCabinets : [PatientCabinet.emptyDefault()];
@@ -164,6 +188,14 @@ class CabinetProvider extends ChangeNotifier {
   Future<void> setTextScale(double scale) async {
     _textScale = scale.clamp(1.0, 1.4);
     await _storageService.saveTextScale(_textScale);
+    notifyListeners();
+  }
+
+  /// Saves an optional 5-digit ZIP code strictly on-device (never sent to server).
+  Future<void> setLocalZipCode(String? zip) async {
+    final clean = (zip ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+    _localZipCode = clean.length == 5 ? clean : null;
+    await _storageService.saveLocalZipCode(_localZipCode);
     notifyListeners();
   }
 
@@ -233,10 +265,25 @@ class CabinetProvider extends ChangeNotifier {
       }
     }
 
+    final updatedRefills = <String, RefillInfo>{};
+    for (final entry in current.refills.entries) {
+      final updatedRefill = newLabel == null
+          ? entry.value.copyWith(clearCabinetLabel: true)
+          : entry.value.copyWith(cabinetLabel: newLabel);
+      updatedRefills[entry.key] = updatedRefill;
+      if (updatedRefill.enabled) {
+        await _notificationService.scheduleRefillReminder(
+          updatedRefill,
+          cabinetId: current.id,
+        );
+      }
+    }
+
     _cabinets[idx] = current.copyWith(
       name: cleanName,
       colorValue: colorValue,
       reminders: updatedReminders,
+      refills: updatedRefills,
     );
     await _persistCabinets();
     notifyListeners();
@@ -250,6 +297,9 @@ class CabinetProvider extends ChangeNotifier {
     final target = _cabinets[idx];
     for (final rxcui in target.reminders.keys) {
       await _notificationService.cancelMedicationReminders(rxcui, cabinetId: target.id);
+    }
+    for (final rxcui in target.refills.keys) {
+      await _notificationService.cancelRefillReminder(rxcui, cabinetId: target.id);
     }
 
     _cabinets.removeAt(idx);
@@ -267,7 +317,15 @@ class CabinetProvider extends ChangeNotifier {
     for (final rxcui in current.reminders.keys) {
       await _notificationService.cancelMedicationReminders(rxcui, cabinetId: current.id);
     }
-    _replaceCabinet(current.copyWith(drugs: const [], supplements: const [], reminders: const {}));
+    for (final rxcui in current.refills.keys) {
+      await _notificationService.cancelRefillReminder(rxcui, cabinetId: current.id);
+    }
+    _replaceCabinet(current.copyWith(
+      drugs: const [],
+      supplements: const [],
+      reminders: const {},
+      refills: const {},
+    ));
     _syncError = null;
     _lastNewAlertsCount = 0;
     await _persistCabinets();
@@ -279,9 +337,13 @@ class CabinetProvider extends ChangeNotifier {
       for (final rxcui in cab.reminders.keys) {
         await _notificationService.cancelMedicationReminders(rxcui, cabinetId: cab.id);
       }
+      for (final rxcui in cab.refills.keys) {
+        await _notificationService.cancelRefillReminder(rxcui, cabinetId: cab.id);
+      }
     }
     _cabinets = [PatientCabinet.emptyDefault()];
     _activeCabinetId = PatientCabinet.defaultId;
+    _localZipCode = null;
     _lastChecked = null;
     _syncError = null;
     _lastNewAlertsCount = 0;
@@ -310,7 +372,15 @@ class CabinetProvider extends ChangeNotifier {
     if (nextReminders.remove(rxcui) != null) {
       await _notificationService.cancelMedicationReminders(rxcui, cabinetId: current.id);
     }
-    _replaceCabinet(current.copyWith(drugs: nextDrugs, reminders: nextReminders));
+    final nextRefills = Map<String, RefillInfo>.from(current.refills);
+    if (nextRefills.remove(rxcui) != null) {
+      await _notificationService.cancelRefillReminder(rxcui, cabinetId: current.id);
+    }
+    _replaceCabinet(current.copyWith(
+      drugs: nextDrugs,
+      reminders: nextReminders,
+      refills: nextRefills,
+    ));
     await _persistCabinets();
     notifyListeners();
   }
@@ -397,6 +467,47 @@ class CabinetProvider extends ChangeNotifier {
       ..[rxcui] = updated;
     _replaceCabinet(current.copyWith(reminders: nextReminders));
     await _storageService.saveCabinets(_cabinets);
+    notifyListeners();
+  }
+
+  Future<void> saveRefill(RefillInfo refill) async {
+    final current = activeCabinet;
+    final labeled = current.isDefault
+        ? refill.copyWith(clearCabinetLabel: true)
+        : refill.copyWith(cabinetLabel: current.name);
+    final nextRefills = Map<String, RefillInfo>.from(current.refills)
+      ..[labeled.rxcui] = labeled;
+    _replaceCabinet(current.copyWith(refills: nextRefills));
+    await _storageService.saveCabinets(_cabinets);
+    await _notificationService.scheduleRefillReminder(
+      labeled,
+      cabinetId: current.id,
+    );
+    notifyListeners();
+  }
+
+  Future<void> deleteRefill(String rxcui) async {
+    final current = activeCabinet;
+    final nextRefills = Map<String, RefillInfo>.from(current.refills)..remove(rxcui);
+    _replaceCabinet(current.copyWith(refills: nextRefills));
+    await _storageService.saveCabinets(_cabinets);
+    await _notificationService.cancelRefillReminder(rxcui, cabinetId: current.id);
+    notifyListeners();
+  }
+
+  Future<void> markRefilledToday(String rxcui, {DateTime? now}) async {
+    final current = activeCabinet;
+    final existing = current.refills[rxcui];
+    if (existing == null) return;
+    final updated = existing.markRefilledToday(now);
+    final nextRefills = Map<String, RefillInfo>.from(current.refills)
+      ..[rxcui] = updated;
+    _replaceCabinet(current.copyWith(refills: nextRefills));
+    await _storageService.saveCabinets(_cabinets);
+    await _notificationService.scheduleRefillReminder(
+      updated,
+      cabinetId: current.id,
+    );
     notifyListeners();
   }
 

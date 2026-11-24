@@ -14,6 +14,7 @@ class StorageService {
   static const String _allowLaunchNotifsKey = 'rx_savings_allow_launch_notifs';
   static const String _allowShortageNotifsKey = 'rx_savings_allow_shortage_notifs';
   static const String _textScaleKey = 'rx_savings_text_scale_v1';
+  static const String _localZipKey = 'rx_savings_local_zip_v1';
 
   Future<List<Drug>> loadCabinet() async {
     final prefs = await SharedPreferences.getInstance();
@@ -84,6 +85,23 @@ class StorageService {
   Future<void> saveTextScale(double scale) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_textScaleKey, scale);
+  }
+
+  /// Strictly on-device 5-digit ZIP code for client-side local pharmacy coupon links.
+  /// Never transmitted to Rx Savings Watch servers.
+  Future<String?> getLocalZipCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_localZipKey);
+  }
+
+  Future<void> saveLocalZipCode(String? zip) async {
+    final prefs = await SharedPreferences.getInstance();
+    final clean = (zip ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+    if (clean.length == 5) {
+      await prefs.setString(_localZipKey, clean);
+    } else {
+      await prefs.remove(_localZipKey);
+    }
   }
 
   Future<Map<String, MedicationReminder>> loadReminders() async {

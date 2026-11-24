@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 import '../models/medication_reminder.dart';
+import '../models/refill_info.dart';
 
 class NotificationService {
   static const int _maxSlotsPerDrug = 32;
@@ -262,5 +263,83 @@ class NotificationService {
         await _plugin.cancel(id: _reminderNotificationId(rxcui, i, cabinetId: cabinetId));
       } catch (_) {}
     }
+  }
+
+  int _refillNotificationId(String rxcui, {String cabinetId = 'default'}) {
+    final key = cabinetId == 'default' ? 'refill::$rxcui' : 'refill::$cabinetId::$rxcui';
+    final base = (key.hashCode & 0x00FFFFFF) % 400000;
+    return 600000 + base;
+  }
+
+  Future<void> scheduleRefillReminder(
+    RefillInfo refill, {
+    String cabinetId = 'default',
+  }) async {
+    if (kIsWeb) return;
+    await initialize();
+    _ensureTimezone();
+
+    await cancelRefillReminder(refill.rxcui, cabinetId: cabinetId);
+    if (!refill.enabled) return;
+
+    try {
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.requestNotificationsPermission();
+    } catch (_) {}
+
+    final targetDate = refill.reminderDate;
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduled = tz.TZDateTime(
+      tz.local,
+      targetDate.year,
+      targetDate.month,
+      targetDate.day,
+      9,
+      0,
+    );
+    if (scheduled.isBefore(now)) {
+      // If reminder date has already passed, schedule 1 minute from now if not yet overdue by > 14 days
+      if (refill.daysRemaining() < -14) return;
+      scheduled = now.add(const Duration(minutes: 1));
+    }
+
+    const androidDetails = AndroidNotificationDetails(
+      'refill_reminders',
+      'Prescription Refill Reminders',
+      channelDescription: 'Private on-device alerts before your prescription supply runs out',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+    const darwinDetails = DarwinNotificationDetails();
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: darwinDetails,
+      macOS: darwinDetails,
+    );
+
+    try {
+      await _plugin.zonedSchedule(
+        id: _refillNotificationId(refill.rxcui, cabinetId: cabinetId),
+        title: refill.notificationTitle,
+        body: refill.notificationBody,
+        scheduledDate: scheduled,
+        notificationDetails: details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      );
+    } catch (e) {
+      debugPrint('[NotificationService] Error scheduling refill alert: $e');
+    }
+  }
+
+  Future<void> cancelRefillReminder(
+    String rxcui, {
+    String cabinetId = 'default',
+  }) async {
+    if (kIsWeb) return;
+    await initialize();
+    try {
+      await _plugin.cancel(id: _refillNotificationId(rxcui, cabinetId: cabinetId));
+    } catch (_) {}
   }
 }

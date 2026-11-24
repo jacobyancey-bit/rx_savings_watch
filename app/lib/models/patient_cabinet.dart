@@ -1,6 +1,7 @@
 import 'drug.dart';
 import 'medication_reminder.dart';
 import 'otc_supplement.dart';
+import 'refill_info.dart';
 
 class PatientCabinet {
   static const String defaultId = 'default';
@@ -23,6 +24,7 @@ class PatientCabinet {
   final List<Drug> drugs;
   final List<OtcSupplement> supplements;
   final Map<String, MedicationReminder> reminders;
+  final Map<String, RefillInfo> refills;
 
   const PatientCabinet({
     required this.id,
@@ -31,6 +33,7 @@ class PatientCabinet {
     this.drugs = const [],
     this.supplements = const [],
     this.reminders = const {},
+    this.refills = const {},
   });
 
   bool get isDefault => id == defaultId;
@@ -64,6 +67,7 @@ class PatientCabinet {
     List<Drug> drugs = const [],
     List<OtcSupplement> supplements = const [],
     Map<String, MedicationReminder> reminders = const {},
+    Map<String, RefillInfo> refills = const {},
   }) {
     return PatientCabinet(
       id: defaultId,
@@ -72,6 +76,7 @@ class PatientCabinet {
       drugs: List<Drug>.from(drugs),
       supplements: List<OtcSupplement>.from(supplements),
       reminders: Map<String, MedicationReminder>.from(reminders),
+      refills: Map<String, RefillInfo>.from(refills),
     );
   }
 
@@ -81,6 +86,7 @@ class PatientCabinet {
     List<Drug>? drugs,
     List<OtcSupplement>? supplements,
     Map<String, MedicationReminder>? reminders,
+    Map<String, RefillInfo>? refills,
   }) {
     return PatientCabinet(
       id: id,
@@ -89,6 +95,7 @@ class PatientCabinet {
       drugs: drugs ?? List<Drug>.from(this.drugs),
       supplements: supplements ?? List<OtcSupplement>.from(this.supplements),
       reminders: reminders ?? Map<String, MedicationReminder>.from(this.reminders),
+      refills: refills ?? Map<String, RefillInfo>.from(this.refills),
     );
   }
 
@@ -99,6 +106,7 @@ class PatientCabinet {
         'drugs': drugs.map((d) => d.toJson()).toList(),
         'supplements': supplements.map((s) => s.toJson()).toList(),
         'reminders': reminders.map((k, v) => MapEntry(k, v.toJson())),
+        'refills': refills.map((k, v) => MapEntry(k, v.toJson())),
       };
 
   factory PatientCabinet.fromJson(Map<String, dynamic> json) {
@@ -131,6 +139,17 @@ class PatientCabinet {
       }
     }
 
+    final rawRefills = <String, RefillInfo>{};
+    if (json['refills'] is Map) {
+      for (final entry in (json['refills'] as Map).entries) {
+        if (entry.value is Map) {
+          rawRefills[entry.key.toString()] = RefillInfo.fromJson(
+            Map<String, dynamic>.from(entry.value as Map),
+          );
+        }
+      }
+    }
+
     return PatientCabinet(
       id: id,
       name: name,
@@ -138,6 +157,7 @@ class PatientCabinet {
       drugs: rawDrugs,
       supplements: rawSupplements,
       reminders: rawReminders,
+      refills: rawRefills,
     );
   }
 }

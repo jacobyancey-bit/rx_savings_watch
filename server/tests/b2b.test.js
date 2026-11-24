@@ -1,5 +1,6 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const { getDb, initSchema } = require('../src/db');
 const { createApp } = require('../src/app');
 const config = require('../src/config');
@@ -97,5 +98,84 @@ describe('B2B Pharmacy & Clinic Partner Program', () => {
       body: JSON.stringify({ zip: '90210' }),
     }).then(r => r.json());
     assert.equal(unmatched.partners.length, 0);
+  });
+
+  it('verifies Stripe webhook HMAC signatures and updates partner payment & subscription lifecycle', async () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test_secret_123';
+    try {
+      // Create a partner with pre-verified NPI
+      const info = db.prepare(`
+        INSERT INTO b2b_partners (
+          business_name, business_type, contact_name, contact_email,
+          zip_codes, plan_tier, npi_number, npi_verified, payment_status, status
+        ) VALUES ('Oakwood Apothecary', 'pharmacy', 'Sam Lee', 'sam@oakwoodrx.com', '75006', 'local_149', '1234567890', 1, 'unpaid', 'pending')
+      `).run();
+      const partnerId = Number(info.lastInsertRowid);
+
+      const signPayload = (bodyStr) => {
+        const ts = Math.floor(Date.now() / 1000);
+        const sig = crypto
+          .createHmac('sha256', process.env.STRIPE_WEBHOOK_SECRET)
+          .update(`${ts}.${bodyStr}`, 'utf8')
+          .digest('hex');
+        return `t=${ts},v1=${sig}`;
+      };
+
+      // 1. Reject tampered signature
+      const badRes = await fetch(`${baseUrl}/api/b2b/stripe-webhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Stripe-Signature': 't=12345,v1=deadbeef' },
+        body: JSON.stringify({ type: 'checkout.session.completed' }),
+      });
+      assert.equal(badRes.status, 400);
+
+      // 2. Accept valid checkout.session.completed -> marks paid + auto-activates NPI-verified partner
+      const completedBody = JSON.stringify({
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            client_reference_id: String(partnerId),
+            customer: 'cus_test_123',
+            subscription: 'sub_test_456',
+          },
+        },
+      });
+      const okRes = await fetch(`${baseUrl}/api/b2b/stripe-webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Stripe-Signature': signPayload(completedBody),
+        },
+        body: completedBody,
+      });
+      assert.equal(okRes.status, 200);
+
+      const activeRow = db.prepare('SELECT payment_status, status, stripe_customer_id, stripe_subscription_id FROM b2b_partners WHERE id = ?').get(partnerId);
+      assert.equal(activeRow.payment_status, 'paid');
+      assert.equal(activeRow.status, 'active');
+      assert.equal(activeRow.stripe_customer_id, 'cus_test_123');
+      assert.equal(activeRow.stripe_subscription_id, 'sub_test_456');
+
+      // 3. Accept valid customer.subscription.deleted -> auto-pauses listing
+      const cancelBody = JSON.stringify({
+        type: 'customer.subscription.deleted',
+        data: { object: { id: 'sub_test_456' } },
+      });
+      const cancelRes = await fetch(`${baseUrl}/api/b2b/stripe-webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Stripe-Signature': signPayload(cancelBody),
+        },
+        body: cancelBody,
+      });
+      assert.equal(cancelRes.status, 200);
+
+      const pausedRow = db.prepare('SELECT payment_status, status FROM b2b_partners WHERE id = ?').get(partnerId);
+      assert.equal(pausedRow.payment_status, 'canceled');
+      assert.equal(pausedRow.status, 'paused');
+    } finally {
+      delete process.env.STRIPE_WEBHOOK_SECRET;
+    }
   });
 });

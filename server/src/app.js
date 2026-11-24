@@ -66,8 +66,15 @@ function createApp(db, options = {}) {
     app.use('/api', apiLimiter);
   }
 
-  // 4. Request Body Parsing with strict size bounds
-  app.use(express.json({ limit: '64kb' }));
+  // 4. Request Body Parsing with strict size bounds (+ rawBody capture for Stripe webhook HMAC verification)
+  app.use(express.json({
+    limit: '64kb',
+    verify: (req, res, buf) => {
+      if (req.originalUrl === '/api/b2b/stripe-webhook') {
+        req.rawBody = buf;
+      }
+    }
+  }));
 
   // 5. Zero-PII & Privacy Cache-Control headers on API & health endpoints
   app.use(['/api', '/health'], (req, res, next) => {

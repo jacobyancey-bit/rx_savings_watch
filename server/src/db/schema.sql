@@ -210,6 +210,11 @@ CREATE TABLE IF NOT EXISTS b2b_partners (
     tagline TEXT,
     zip_codes TEXT NOT NULL DEFAULT '', -- Comma-separated 5-digit U.S. ZIP codes
     plan_tier TEXT NOT NULL DEFAULT 'pilot_60d',
+    npi_number TEXT,
+    npi_verified INTEGER NOT NULL DEFAULT 0,
+    payment_status TEXT NOT NULL DEFAULT 'unpaid' CHECK(payment_status IN ('unpaid', 'trial', 'paid', 'past_due', 'canceled')),
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'active', 'paused')),
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))

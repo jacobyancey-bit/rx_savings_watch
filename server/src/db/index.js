@@ -55,6 +55,26 @@ function initSchema(db) {
   if (!cols.some(c => c.name === 'reference_brands')) {
     db.exec('ALTER TABLE drugs ADD COLUMN reference_brands TEXT;');
   }
+
+  // Backwards-compatible migrations for b2b_partners Stripe & NPI columns
+  const b2bCols = db.prepare('PRAGMA table_info(b2b_partners)').all();
+  if (b2bCols.length > 0) {
+    if (!b2bCols.some(c => c.name === 'npi_number')) {
+      db.exec('ALTER TABLE b2b_partners ADD COLUMN npi_number TEXT;');
+    }
+    if (!b2bCols.some(c => c.name === 'npi_verified')) {
+      db.exec('ALTER TABLE b2b_partners ADD COLUMN npi_verified INTEGER NOT NULL DEFAULT 0;');
+    }
+    if (!b2bCols.some(c => c.name === 'payment_status')) {
+      db.exec("ALTER TABLE b2b_partners ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'unpaid';");
+    }
+    if (!b2bCols.some(c => c.name === 'stripe_customer_id')) {
+      db.exec('ALTER TABLE b2b_partners ADD COLUMN stripe_customer_id TEXT;');
+    }
+    if (!b2bCols.some(c => c.name === 'stripe_subscription_id')) {
+      db.exec('ALTER TABLE b2b_partners ADD COLUMN stripe_subscription_id TEXT;');
+    }
+  }
 }
 
 /**

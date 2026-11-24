@@ -11,6 +11,7 @@ const { createSchedulerRouter } = require('./routes/scheduler');
 const { createPushRouter } = require('./routes/push');
 const { createReviewsRouter } = require('./routes/reviews');
 const { createStatsRouter, recordDailyMetric, isLikelyBot } = require('./routes/stats');
+const { createSeoRouter } = require('./routes/seo');
 const { IngestionScheduler } = require('./scheduler');
 
 /**
@@ -109,6 +110,9 @@ function createApp(db, options = {}) {
   app.use('/api', (req, res) => {
     res.status(404).json({ error: 'Not Found' });
   });
+
+  // Server-rendered SEO pages (/robots.txt, /sitemap.xml, /medications, /medications/:slug)
+  app.use('/', createSeoRouter(db));
 
   // Serve Flutter Web App at '/' if built into server/public
   const webPublicDir = path.join(__dirname, '..', 'public');

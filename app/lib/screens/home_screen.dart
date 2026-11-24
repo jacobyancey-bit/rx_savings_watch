@@ -966,18 +966,35 @@ class _HomeScreenState extends State<HomeScreen> {
             color: highlight
                 ? accent.withValues(alpha: isDark ? 0.16 : 0.08)
                 : cardBg,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(15),
             border: Border.all(
               color: highlight ? accent.withValues(alpha: 0.45) : borderColor,
             ),
+            boxShadow: isDark
+                ? const []
+                : [
+                    BoxShadow(
+                      color: const Color(0xFF0A3A37).withValues(alpha: 0.04),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(icon, size: 16, color: accent),
-                  const SizedBox(width: 6),
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: isDark ? 0.22 : 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, size: 16, color: accent),
+                  ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       label,
@@ -985,21 +1002,22 @@ class _HomeScreenState extends State<HomeScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.6,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Text(
                 value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
                   color: highlight ? accent : theme.colorScheme.onSurface,
                 ),
               ),

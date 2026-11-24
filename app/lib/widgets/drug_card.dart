@@ -37,27 +37,40 @@ class DrugCard extends StatelessWidget {
         '${drug.commercialGenericAvailable ? "Generic launched. 2-Signal verified." : "Brand only."}'
         '${drug.hasActiveShortage ? " Active FDA supply shortage reported." : ""}';
 
+    final isDark = theme.brightness == Brightness.dark;
     return Semantics(
       label: semanticLabel,
       button: true,
-      child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        elevation: 1,
-        shape: RoundedRectangleBorder(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
+          border: Border.all(
             color: drug.commercialGenericAvailable
-                ? Colors.green.shade300
-                : Colors.grey.shade200,
-            width: drug.commercialGenericAvailable ? 1.5 : 1.0,
+                ? (isDark ? Colors.teal.shade600 : Colors.teal.shade200)
+                : theme.colorScheme.outlineVariant,
+            width: drug.commercialGenericAvailable ? 1.25 : 1.0,
           ),
+          boxShadow: isDark
+              ? const []
+              : [
+                  BoxShadow(
+                    color: const Color(0xFF0A3A37).withValues(alpha: 0.045),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
         ),
-        child: InkWell(
-          onTap: onTap,
+        child: Material(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Top row: Brand & Generic name + Savings badge
@@ -195,6 +208,7 @@ class DrugCard extends StatelessWidget {
               ],
             ),
           ),
+        ),
         ),
       ),
     );

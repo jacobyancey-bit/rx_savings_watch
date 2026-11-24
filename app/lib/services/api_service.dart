@@ -157,6 +157,26 @@ class ApiService {
     }
   }
 
+  /// Zero-PII local sponsored pharmacy lookup (sends ONLY a 5-digit ZIP, never a drug name or RxCUI).
+  Future<List<Map<String, dynamic>>> getLocalSponsoredPharmacies(String zip) async {
+    final clean = zip.replaceAll(RegExp(r'[^0-9]'), '');
+    if (clean.length != 5) return const [];
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/b2b/local'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'zip': clean}),
+          )
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return const [];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return (data['partners'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Submit a strictly anonymous, zero-PII data quality flag (enum only, no free text)
   Future<bool> submitDataQualityFlag({
     required String rxcui,

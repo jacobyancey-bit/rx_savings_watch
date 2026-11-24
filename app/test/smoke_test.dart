@@ -469,6 +469,16 @@ void main() {
           child: MaterialApp(
             home: DrugDetailScreen(
               drug: lipitor,
+              initialLocalPharmacies: const [
+                {
+                  'id': 1,
+                  'business_name': 'Main Street Independent Pharmacy',
+                  'phone': '(555) 234-5678',
+                  'address': '123 Main St, Addison, TX 75001',
+                  'transfer_url': 'https://mainstreetrx.com/transfer',
+                  'tagline': 'Transparent cash prices & free local delivery',
+                },
+              ],
               initialPartners: const [
                 {
                   'id': 'cost_plus_drugs',
@@ -527,6 +537,8 @@ void main() {
       expect(find.text('SingleCare near 75001'), findsOneWidget);
       expect(find.text('GoodRx near 75001'), findsOneWidget);
       expect(find.text('Pharmacies near 75001'), findsOneWidget);
+      expect(find.text('Main Street Independent Pharmacy'), findsOneWidget);
+      expect(find.text('Sponsored Local Partner'), findsOneWidget);
 
       // Partner buttons are rendered via native url_launcher Link(target: LinkTarget.blank) with local ZIP
       final links = tester.widgetList<Link>(find.byType(Link)).toList();

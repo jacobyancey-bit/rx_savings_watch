@@ -356,6 +356,16 @@ class HomeFooterSection extends StatelessWidget {
                 'Terms',
                 () => LegalPolicySheet.showTermsOfService(context),
               ),
+              Text('•', style: TextStyle(color: muted, fontSize: 12)),
+              Link(
+                uri: Uri.parse('https://rx.dangling-dice-studios.com/partners'),
+                target: LinkTarget.blank,
+                builder: (context, followLink) => _footerLink(
+                  context,
+                  'For Pharmacies & Clinics',
+                  () => followLink?.call(),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),

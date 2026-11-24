@@ -13,12 +13,14 @@ class DrugDetailScreen extends StatefulWidget {
   final Drug drug;
   final String? initialStrength;
   final List<Map<String, dynamic>>? initialPartners;
+  final List<Map<String, dynamic>>? initialLocalPharmacies;
 
   const DrugDetailScreen({
     super.key,
     required this.drug,
     this.initialStrength,
     this.initialPartners,
+    this.initialLocalPharmacies,
   });
 
   @override
@@ -36,6 +38,8 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   String? _selectedStrength;
   String? _selectedRouteGroup;
   List<Map<String, dynamic>> _verifiedPartners = const [];
+  List<Map<String, dynamic>> _localSponsoredPharmacies = const [];
+  String? _loadedLocalZip;
   Map<String, dynamic>? _discountCard;
   Map<String, dynamic>? _brandAssistance;
 
@@ -139,11 +143,37 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     _loadVerifiedPartners();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (widget.initialLocalPharmacies != null) {
+        setState(() => _localSponsoredPharmacies = List<Map<String, dynamic>>.from(widget.initialLocalPharmacies!));
+      }
       final savedZip = context.read<CabinetProvider>().localZipCode;
       if (savedZip != null && savedZip.isNotEmpty) {
         _zipController.text = savedZip;
+        _loadLocalSponsoredPharmacies(savedZip);
       }
     });
+  }
+
+  Future<void> _loadLocalSponsoredPharmacies(String? zip) async {
+    if (widget.initialLocalPharmacies != null) return;
+    final clean = (zip ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+    if (clean.length != 5) {
+      if (mounted && _localSponsoredPharmacies.isNotEmpty) {
+        setState(() {
+          _localSponsoredPharmacies = const [];
+          _loadedLocalZip = null;
+        });
+      }
+      return;
+    }
+    if (_loadedLocalZip == clean) return;
+    _loadedLocalZip = clean;
+    final provider = context.read<CabinetProvider>();
+    final api = ApiService(baseUrl: provider.serverUrl);
+    final matches = await api.getLocalSponsoredPharmacies(clean);
+    if (mounted && _loadedLocalZip == clean) {
+      setState(() => _localSponsoredPharmacies = matches);
+    }
   }
 
   Future<void> _loadLiveDetailsIfNeeded() async {
@@ -1051,8 +1081,10 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                     final digits = val.replaceAll(RegExp(r'[^0-9]'), '');
                     if (digits.length == 5) {
                       cabinet.setLocalZipCode(digits);
+                      _loadLocalSponsoredPharmacies(digits);
                     } else if (digits.isEmpty && localZip != null) {
                       cabinet.setLocalZipCode(null);
+                      _loadLocalSponsoredPharmacies(null);
                     }
                   },
                 ),
@@ -1073,6 +1105,107 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
             ],
           ),
           const SizedBox(height: 12),
+
+          // Featured Local Independent Pharmacy (only shown when an active B2B partner sponsors this ZIP)
+          if (_localSponsoredPharmacies.isNotEmpty && localZip != null) ...[
+            for (final lp in _localSponsoredPharmacies)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: theme.brightness == Brightness.dark
+                      ? Colors.indigo.withValues(alpha: 0.18)
+                      : Colors.indigo.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: theme.brightness == Brightness.dark
+                        ? Colors.indigo.shade400
+                        : Colors.indigo.shade200,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.storefront_outlined,
+                          size: 18,
+                          color: theme.brightness == Brightness.dark ? Colors.indigo.shade200 : Colors.indigo.shade800,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            lp['business_name']?.toString() ?? 'Local Pharmacy',
+                            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: theme.brightness == Brightness.dark
+                                ? Colors.indigo.shade700
+                                : Colors.indigo.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Sponsored Local Partner',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
+                              color: theme.brightness == Brightness.dark ? Colors.white : Colors.indigo.shade900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (lp['tagline'] != null && lp['tagline'].toString().isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        lp['tagline'].toString(),
+                        style: TextStyle(fontSize: 12.5, color: theme.colorScheme.onSurface),
+                      ),
+                    ],
+                    if (lp['address'] != null && lp['address'].toString().isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        lp['address'].toString(),
+                        style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (lp['phone'] != null && lp['phone'].toString().isNotEmpty)
+                          _buildPartnerButton(
+                            context,
+                            label: 'Call ${lp['phone']}',
+                            icon: Icons.phone_outlined,
+                            uri: Uri.parse('tel:${lp['phone'].toString().replaceAll(RegExp(r'[^0-9+]'), '')}'),
+                          ),
+                        if (lp['transfer_url'] != null && lp['transfer_url'].toString().isNotEmpty)
+                          _buildPartnerButton(
+                            context,
+                            label: 'Transfer Rx',
+                            icon: Icons.swap_horiz_rounded,
+                            uri: Uri.parse(lp['transfer_url'].toString()),
+                          ),
+                        if (lp['website_url'] != null && lp['website_url'].toString().isNotEmpty)
+                          _buildPartnerButton(
+                            context,
+                            label: 'Visit Website',
+                            icon: Icons.open_in_new,
+                            uri: Uri.parse(lp['website_url'].toString()),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+          ],
 
           // Instant 30-day retail cash benchmark from CMS NADAC (when available)
           if (drug.pricing?.genericNadacUnitPrice != null) ...[

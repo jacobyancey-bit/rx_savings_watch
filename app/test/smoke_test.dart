@@ -516,13 +516,17 @@ void main() {
       expect(find.text('SingleCare Coupon'), findsOneWidget);
       expect(find.text('GoodRx Coupon'), findsOneWidget);
 
-      // Enter a local-only 5-digit ZIP code -> enriches client-side coupon links without calling server
+      // Enter a local-only 5-digit ZIP code -> enriches client-side coupon links + labels + Maps button
       final zipField = find.widgetWithText(TextField, 'ZIP (optional)');
       expect(zipField, findsOneWidget);
       await tester.enterText(zipField, '75001');
       await tester.pumpAndSettle();
       expect(storage.localZip, '75001');
       expect(find.textContaining('Saved locally for 75001'), findsOneWidget);
+      expect(find.textContaining('Est. 30-day generic cash range near 75001'), findsOneWidget);
+      expect(find.text('SingleCare near 75001'), findsOneWidget);
+      expect(find.text('GoodRx near 75001'), findsOneWidget);
+      expect(find.text('Pharmacies near 75001'), findsOneWidget);
 
       // Partner buttons are rendered via native url_launcher Link(target: LinkTarget.blank) with local ZIP
       final links = tester.widgetList<Link>(find.byType(Link)).toList();

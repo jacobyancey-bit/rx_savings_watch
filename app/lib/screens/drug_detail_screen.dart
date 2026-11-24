@@ -32,6 +32,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   final double _monthlyGenericCopay = 10.0;
   late Drug _drug;
   bool _isRefreshingDetails = false;
+  bool _isLoadingPartners = false;
   String? _selectedStrength;
   String? _selectedRouteGroup;
   List<Map<String, dynamic>> _verifiedPartners = const [];
@@ -173,12 +174,76 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     if (mounted) setState(() => _isRefreshingDetails = false);
   }
 
+  List<Map<String, dynamic>> _buildFallbackPartners(Drug drug) {
+    final primary = drug.displayName.trim();
+    final slug = primary
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .first
+        .replaceAll(RegExp(r'[^a-z0-9-]'), '');
+    final genericFirst = drug.genericName.trim().split(RegExp(r'[\s,/]+')).first;
+    final list = <Map<String, dynamic>>[
+      {
+        'id': 'cost_plus_drugs',
+        'label': 'Cost Plus Drugs',
+        'url': 'https://www.costplusdrugs.com/medications/?search=${Uri.encodeQueryComponent(genericFirst.isNotEmpty ? genericFirst : primary)}',
+        'price_hint': null,
+      },
+      {
+        'id': 'amazon_pharmacy',
+        'label': 'Amazon Pharmacy',
+        'url': 'https://pharmacy.amazon.com/s?k=${Uri.encodeQueryComponent(primary)}&tag=danglingdices-20',
+        'price_hint': null,
+      },
+    ];
+    if (slug.length >= 3) {
+      list.addAll([
+        {
+          'id': 'singlecare',
+          'label': 'SingleCare Coupon',
+          'url': 'https://www.singlecare.com/prescription/$slug',
+          'price_hint': null,
+        },
+        {
+          'id': 'goodrx',
+          'label': 'GoodRx Coupon',
+          'url': 'https://www.goodrx.com/$slug',
+          'price_hint': null,
+        },
+        {
+          'id': 'optum_perks',
+          'label': 'Optum Perks Coupon',
+          'url': 'https://perks.optum.com/drug/$slug',
+          'price_hint': null,
+        },
+        {
+          'id': 'wellrx',
+          'label': 'WellRx Coupon',
+          'url': 'https://www.wellrx.com/prescriptions/$slug/',
+          'price_hint': null,
+        },
+      ]);
+    }
+    return list;
+  }
+
   Future<void> _loadVerifiedPartners() async {
     if (widget.initialPartners != null) {
       if (mounted) {
-        setState(() => _verifiedPartners = List<Map<String, dynamic>>.from(widget.initialPartners!));
+        setState(() {
+          _verifiedPartners = List<Map<String, dynamic>>.from(widget.initialPartners!);
+          _isLoadingPartners = false;
+        });
       }
       return;
+    }
+    if (mounted) {
+      setState(() {
+        _isLoadingPartners = true;
+        if (_verifiedPartners.isEmpty) {
+          _verifiedPartners = _buildFallbackPartners(_drug);
+        }
+      });
     }
     final provider = context.read<CabinetProvider>();
     final api = ApiService(baseUrl: provider.serverUrl);
@@ -186,13 +251,14 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     final list = (options['partners'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
     if (mounted) {
       setState(() {
-        _verifiedPartners = list;
+        _verifiedPartners = list.isNotEmpty ? list : _buildFallbackPartners(_drug);
         _discountCard = options['discount_card'] is Map<String, dynamic>
             ? options['discount_card'] as Map<String, dynamic>
             : null;
         _brandAssistance = options['brand_assistance'] is Map<String, dynamic>
             ? options['brand_assistance'] as Map<String, dynamic>
             : null;
+        _isLoadingPartners = false;
       });
     }
   }
@@ -427,8 +493,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                 ];
 
                 final rightCards = <Widget>[
-                  if (_verifiedPartners.isNotEmpty)
-                    _buildPartnersCard(context, theme, drug),
+                  _buildPartnersCard(context, theme, drug),
                   if (_discountCard != null)
                     _buildDiscountCard(context, theme),
                   if (_brandAssistance != null)
@@ -1009,33 +1074,114 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
           ),
           const SizedBox(height: 12),
 
+          // Instant 30-day retail cash benchmark from CMS NADAC (when available)
+          if (drug.pricing?.genericNadacUnitPrice != null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: theme.brightness == Brightness.dark
+                    ? Colors.teal.withValues(alpha: 0.14)
+                    : Colors.teal.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: theme.brightness == Brightness.dark
+                      ? Colors.teal.shade700
+                      : Colors.teal.shade200,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.insights_outlined,
+                    size: 18,
+                    color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade800,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      () {
+                        final base30 = drug.pricing!.genericNadacUnitPrice! * 30;
+                        final low = (base30 + 5).round();
+                        final high = (base30 + 12).round();
+                        final zipNote = localZip != null ? ' near $localZip' : '';
+                        return 'Est. 30-day generic cash range$zipNote: ~\$$low–\$$high (CMS NADAC + typical pharmacy fee). Tap a pharmacy below for exact live checkout prices.';
+                      }(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: theme.brightness == Brightness.dark ? Colors.teal.shade100 : Colors.teal.shade900,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          if (_isLoadingPartners)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Checking live Cost Plus Drugs pricing...',
+                    style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+
           Wrap(
             spacing: 10,
             runSpacing: 10,
-            children: _verifiedPartners.map((partner) {
-              final id = partner['id']?.toString() ?? '';
-              final baseLabel = partner['label']?.toString() ?? 'Pharmacy';
-              final priceHint = partner['price_hint']?.toString();
-              final label = (priceHint != null && priceHint.isNotEmpty)
-                  ? '$baseLabel ($priceHint)'
-                  : baseLabel;
-              final url = partner['url']?.toString() ?? '';
-              final icon = switch (id) {
-                'cost_plus_drugs' => Icons.medication_outlined,
-                'amazon_pharmacy' => Icons.local_shipping_outlined,
-                'singlecare' => Icons.confirmation_number_outlined,
-                'goodrx' => Icons.savings_outlined,
-                'optum_perks' => Icons.local_pharmacy_outlined,
-                'wellrx' => Icons.discount_outlined,
-                _ => Icons.open_in_new,
-              };
-              return _buildPartnerButton(
-                context,
-                label: label,
-                icon: icon,
-                uri: _buildClientPartnerUri(id, url, localZip),
-              );
-            }).toList(),
+            children: [
+              ..._verifiedPartners.map((partner) {
+                final id = partner['id']?.toString() ?? '';
+                final baseLabel = partner['label']?.toString() ?? 'Pharmacy';
+                final priceHint = partner['price_hint']?.toString();
+                final supportsZip = id == 'singlecare' || id == 'goodrx' || id == 'optum_perks' || id == 'wellrx';
+                final String label;
+                if (priceHint != null && priceHint.isNotEmpty) {
+                  label = '$baseLabel ($priceHint)';
+                } else if (supportsZip && localZip != null) {
+                  label = '${baseLabel.replaceAll(' Coupon', '')} near $localZip';
+                } else {
+                  label = baseLabel;
+                }
+                final url = partner['url']?.toString() ?? '';
+                final icon = switch (id) {
+                  'cost_plus_drugs' => Icons.medication_outlined,
+                  'amazon_pharmacy' => Icons.local_shipping_outlined,
+                  'singlecare' => Icons.confirmation_number_outlined,
+                  'goodrx' => Icons.savings_outlined,
+                  'optum_perks' => Icons.local_pharmacy_outlined,
+                  'wellrx' => Icons.discount_outlined,
+                  _ => Icons.open_in_new,
+                };
+                return _buildPartnerButton(
+                  context,
+                  label: label,
+                  icon: icon,
+                  uri: _buildClientPartnerUri(id, url, localZip),
+                );
+              }),
+              if (localZip != null)
+                _buildPartnerButton(
+                  context,
+                  label: 'Pharmacies near $localZip',
+                  icon: Icons.map_outlined,
+                  uri: Uri.parse('https://www.google.com/maps/search/pharmacy+near+$localZip'),
+                ),
+            ],
           ),
           const SizedBox(height: 12),
           Text(

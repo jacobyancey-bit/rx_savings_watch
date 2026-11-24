@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/link.dart';
 import '../config/partner_links.dart';
 import 'legal_policy_sheet.dart';
 import 'privacy_promise_sheet.dart';
@@ -10,12 +10,6 @@ import 'review_sheet.dart';
 /// and giving one-tap access to full FAQs, Contact info, and Disclaimers.
 class HomeFooterSection extends StatelessWidget {
   const HomeFooterSection({super.key});
-
-  Future<void> _openUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
 
   void _showFaqsSheet(BuildContext context) {
     final theme = Theme.of(context);
@@ -160,12 +154,14 @@ class HomeFooterSection extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            FilledButton.tonalIcon(
-              onPressed: () => _openUrl(
-                'mailto:${PartnerLinks.supportEmail}?subject=Rx%20Savings%20Watch%20Support',
+            Link(
+              uri: Uri.parse('mailto:${PartnerLinks.supportEmail}?subject=Rx%20Savings%20Watch%20Support'),
+              target: LinkTarget.blank,
+              builder: (context, followLink) => FilledButton.tonalIcon(
+                onPressed: followLink,
+                icon: const Icon(Icons.email_outlined, size: 18),
+                label: const Text(PartnerLinks.supportEmail),
               ),
-              icon: const Icon(Icons.email_outlined, size: 18),
-              label: const Text(PartnerLinks.supportEmail),
             ),
           ],
         ),

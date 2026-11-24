@@ -334,11 +334,36 @@ function renderPartnersPageHtml() {
   </footer>
 
   <script>
+    function updateSubmitLabel(plan) {
+      const btn = document.getElementById('submitBtn');
+      if (!btn) return;
+      if (plan === 'local_149') {
+        btn.textContent = 'Continue to Checkout ($149/mo)';
+      } else if (plan === 'multi_349') {
+        btn.textContent = 'Continue to Checkout ($349/mo)';
+      } else {
+        btn.textContent = 'Submit 60-Day Free Pilot Application';
+      }
+    }
+
     function selectPlan(plan) {
       const sel = document.getElementById('plan_tier');
       if (sel) sel.value = plan;
-      document.getElementById('apply').scrollIntoView({ behavior: 'smooth' });
-      document.getElementById('business_name').focus();
+      updateSubmitLabel(plan);
+      const applyEl = document.getElementById('apply');
+      if (applyEl) {
+        applyEl.style.borderColor = '#057873';
+        applyEl.style.borderWidth = '2px';
+        applyEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      const nameInput = document.getElementById('business_name');
+      if (nameInput) nameInput.focus();
+    }
+
+    const planSelect = document.getElementById('plan_tier');
+    if (planSelect) {
+      planSelect.addEventListener('change', (e) => updateSubmitLabel(e.target.value));
+      updateSubmitLabel(planSelect.value);
     }
 
     // Show Stripe Checkout return status if present

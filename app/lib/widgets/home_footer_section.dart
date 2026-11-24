@@ -359,7 +359,7 @@ class HomeFooterSection extends StatelessWidget {
               Text('•', style: TextStyle(color: muted, fontSize: 12)),
               Link(
                 uri: Uri.parse('https://rx.dangling-dice-studios.com/partners'),
-                target: LinkTarget.blank,
+                target: LinkTarget.self,
                 builder: (context, followLink) => _footerLink(
                   context,
                   'For Pharmacies & Clinics',

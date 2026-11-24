@@ -510,7 +510,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         // Subtle B2B Partnership CTA card for visiting pharmacies & clinics
                         Link(
                           uri: Uri.parse('https://rx.dangling-dice-studios.com/partners'),
-                          target: LinkTarget.blank,
+                          target: LinkTarget.self,
                           builder: (context, followLink) => Material(
                             color: isDark
                                 ? Colors.teal.withValues(alpha: 0.14)

@@ -9,6 +9,7 @@ import '../widgets/cabinet_switcher_sheet.dart';
 import '../widgets/drug_card.dart';
 import '../widgets/home_footer_section.dart';
 import '../widgets/privacy_promise_sheet.dart';
+import '../widgets/refill_setup_sheet.dart';
 import '../widgets/reminder_sheet.dart';
 import '../widgets/supplement_card.dart';
 import '../widgets/transfer_cabinet_sheet.dart';
@@ -25,6 +26,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _checkedIncomingTransfer = false;
+  int _desktopNavIndex = 0; // 0 = Cabinet, 1 = Search Catalog, 2 = Settings
 
   @override
   void initState() {
@@ -91,10 +93,52 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _handleSyncPressed(BuildContext context, CabinetProvider cabinet) async {
+    if (cabinet.cabinet.isEmpty) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add a medication to your cabinet first to check for updates.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    await cabinet.syncCabinet();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
+    final msg = cabinet.syncError != null
+        ? 'Could not reach server. Showing cached data.'
+        : cabinet.lastNewAlertsCount > 0
+            ? 'Found ${cabinet.lastNewAlertsCount} new medication update(s)!'
+            : 'Cabinet checked — all ${cabinet.cabinet.length} medication${cabinet.cabinet.length == 1 ? '' : 's'} up to date!';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  Future<void> _handleTextScalePressed(BuildContext context, CabinetProvider cabinet) async {
+    await cabinet.cycleTextScale();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Text size: ${cabinet.textScaleLabel}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cabinet = context.watch<CabinetProvider>();
     final theme = Theme.of(context);
+    final isDesktop = MediaQuery.sizeOf(context).width >= 960;
+
+    if (isDesktop) {
+      return _buildDesktopShell(context, cabinet, theme);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -114,18 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () async {
-              await cabinet.cycleTextScale();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).clearSnackBars();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Text size: ${cabinet.textScaleLabel}'),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              }
-            },
+            onPressed: () => _handleTextScalePressed(context, cabinet),
             style: TextButton.styleFrom(
               minimumSize: const Size(48, 48),
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -147,31 +180,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   )
                 : const Icon(Icons.sync),
             tooltip: 'Check for generic updates',
-            onPressed: cabinet.isSyncing
-                ? null
-                : () async {
-                    if (cabinet.cabinet.isEmpty) {
-                      ScaffoldMessenger.of(context).clearSnackBars();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Add a medication to your cabinet first to check for updates.'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                      return;
-                    }
-                    await cabinet.syncCabinet();
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).clearSnackBars();
-                    final msg = cabinet.syncError != null
-                        ? 'Could not reach server. Showing cached data.'
-                        : cabinet.lastNewAlertsCount > 0
-                            ? 'Found ${cabinet.lastNewAlertsCount} new medication update(s)!'
-                            : 'Cabinet checked — all ${cabinet.cabinet.length} medication${cabinet.cabinet.length == 1 ? '' : 's'} up to date!';
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
-                    );
-                  },
+            onPressed: cabinet.isSyncing ? null : () => _handleSyncPressed(context, cabinet),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -184,21 +193,354 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: cabinet.isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
+      body: _buildCabinetBody(context, cabinet, theme, isDesktop: false),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SearchScreen()),
+          );
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('Add Medication'),
+      ),
+    );
+  }
+
+  Widget _buildDesktopShell(BuildContext context, CabinetProvider cabinet, ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    final sidebarBg = isDark ? const Color(0xFF151E1D) : const Color(0xFFFAFCFC);
+    final borderColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.6);
+
+    Widget buildNavItem({
+      required IconData icon,
+      required IconData selectedIcon,
+      required String label,
+      required int index,
+      String? badge,
+    }) {
+      final selected = _desktopNavIndex == index;
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+        child: Material(
+          color: selected
+              ? theme.colorScheme.primaryContainer.withValues(alpha: isDark ? 0.45 : 0.75)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => setState(() => _desktopNavIndex = index),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              child: Row(
+                children: [
+                  Icon(
+                    selected ? selectedIcon : icon,
+                    size: 20,
+                    color: selected ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                        color: selected ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  if (badge != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        badge,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: selected ? Colors.white : theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget activePane;
+    switch (_desktopNavIndex) {
+      case 1:
+        activePane = const SearchScreen(embedded: true);
+        break;
+      case 2:
+        activePane = const SettingsScreen(embedded: true);
+        break;
+      default:
+        activePane = _buildCabinetBody(context, cabinet, theme, isDesktop: true);
+    }
+
+    return Scaffold(
+      body: Row(
+        children: [
+          // Persistent Left Navigation Sidebar
+          Container(
+            width: 268,
+            decoration: BoxDecoration(
+              color: sidebarBg,
+              border: Border(right: BorderSide(color: borderColor)),
+            ),
+            child: SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Brand Header
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 20, 16, 14),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.teal.shade700,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.medication_liquid_outlined, color: Colors.white, size: 22),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Rx Savings Watch',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
+                              Text(
+                                'Official FDA • Zero PII',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  const SizedBox(height: 10),
+
+                  // Primary Navigation
+                  buildNavItem(
+                    icon: Icons.inventory_2_outlined,
+                    selectedIcon: Icons.inventory_2,
+                    label: 'Medication Cabinet',
+                    index: 0,
+                    badge: '${cabinet.cabinet.length}',
+                  ),
+                  buildNavItem(
+                    icon: Icons.search_outlined,
+                    selectedIcon: Icons.search,
+                    label: 'Search FDA Catalog',
+                    index: 1,
+                  ),
+                  buildNavItem(
+                    icon: Icons.settings_outlined,
+                    selectedIcon: Icons.settings,
+                    label: 'Settings & Privacy',
+                    index: 2,
+                  ),
+
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+
+                  // Caregiver Cabinets Switcher right in Sidebar
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 12, 6),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'CABINETS',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.0,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => CabinetSwitcherSheet.show(context),
+                          icon: const Icon(Icons.add, size: 15),
+                          label: const Text('Manage', style: TextStyle(fontSize: 12)),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      children: [
+                        for (final c in cabinet.cabinets)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Material(
+                              color: c.id == cabinet.activeCabinetId && _desktopNavIndex == 0
+                                  ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(10),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: () {
+                                  cabinet.switchCabinet(c.id);
+                                  setState(() => _desktopNavIndex = 0);
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 10,
+                                        height: 10,
+                                        decoration: BoxDecoration(
+                                          color: Color(c.colorValue),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          c.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: c.id == cabinet.activeCabinetId
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        '${c.drugs.length}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  const Divider(height: 1),
+                  // Quick Tools Footer in Sidebar
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        FilledButton.tonalIcon(
+                          onPressed: () => AddSupplementSheet.show(context),
+                          icon: const Icon(Icons.spa_outlined, size: 17),
+                          label: const Text('Add OTC / Supplement'),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => TransferCabinetSheet.show(context),
+                                icon: const Icon(Icons.devices_outlined, size: 16),
+                                label: const Text('Transfer', style: TextStyle(fontSize: 12.5)),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton.outlined(
+                              tooltip: 'Check for generic updates',
+                              onPressed: cabinet.isSyncing ? null : () => _handleSyncPressed(context, cabinet),
+                              icon: cabinet.isSyncing
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.sync, size: 18),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton.outlined(
+                              tooltip: 'Text size (${cabinet.textScaleLabel})',
+                              onPressed: () => _handleTextScalePressed(context, cabinet),
+                              icon: const Text('Aa', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Full-Width Main Content Canvas
+          Expanded(
+            child: activePane,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCabinetBody(BuildContext context, CabinetProvider cabinet, ThemeData theme, {required bool isDesktop}) {
+    if (cabinet.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return RefreshIndicator(
               onRefresh: () => cabinet.syncCabinet(),
               child: CustomScrollView(
                 slivers: [
-                  // Overview stats hero banner
-                  SliverToBoxAdapter(
-                    child: _buildHeroBanner(context, cabinet),
-                  ),
+                  if (isDesktop)
+                    // Clean desktop page header + 4 accurate KPI cards (with smart fallback)
+                    SliverToBoxAdapter(
+                      child: _buildDesktopHeader(context, cabinet, theme),
+                    )
+                  else ...[
+                    // Overview stats hero banner (mobile)
+                    SliverToBoxAdapter(
+                      child: _buildHeroBanner(context, cabinet),
+                    ),
 
-                  // Persistent "No Personal Data Collected" trust indicator
-                  const SliverToBoxAdapter(
-                    child: PrivacyTrustBanner(),
-                  ),
+                    // Persistent "No Personal Data Collected" trust indicator (mobile)
+                    const SliverToBoxAdapter(
+                      child: PrivacyTrustBanner(),
+                    ),
+                  ],
 
                   // Graceful Offline Mode Banner
                   if (cabinet.syncError != null)
@@ -230,76 +572,77 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
-                  // Cabinet items header (zero-clutter tappable switcher for caregivers)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: InkWell(
-                              onTap: () => CabinetSwitcherSheet.show(context),
-                              borderRadius: BorderRadius.circular(10),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (cabinet.hasMultipleCabinets || !cabinet.activeCabinet.isDefault) ...[
-                                          Container(
-                                            width: 10,
-                                            height: 10,
-                                            margin: const EdgeInsets.only(right: 7),
-                                            decoration: BoxDecoration(
-                                              color: Color(cabinet.activeCabinet.colorValue),
-                                              shape: BoxShape.circle,
+                  // Cabinet items header (mobile only — desktop already shows title & sidebar switcher)
+                  if (!isDesktop)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () => CabinetSwitcherSheet.show(context),
+                                borderRadius: BorderRadius.circular(10),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (cabinet.hasMultipleCabinets || !cabinet.activeCabinet.isDefault) ...[
+                                            Container(
+                                              width: 10,
+                                              height: 10,
+                                              margin: const EdgeInsets.only(right: 7),
+                                              decoration: BoxDecoration(
+                                                color: Color(cabinet.activeCabinet.colorValue),
+                                                shape: BoxShape.circle,
+                                              ),
                                             ),
+                                          ],
+                                          Flexible(
+                                            child: Text(
+                                              '${cabinet.activeCabinet.headerTitle} (${cabinet.cabinet.length})',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: theme.textTheme.titleMedium?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 2),
+                                          Icon(
+                                            Icons.keyboard_arrow_down_rounded,
+                                            size: 20,
+                                            color: theme.colorScheme.onSurfaceVariant,
                                           ),
                                         ],
-                                        Flexible(
-                                          child: Text(
-                                            '${cabinet.activeCabinet.headerTitle} (${cabinet.cabinet.length})',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: theme.textTheme.titleMedium?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 2),
-                                        Icon(
-                                          Icons.keyboard_arrow_down_rounded,
-                                          size: 20,
-                                          color: theme.colorScheme.onSurfaceVariant,
-                                        ),
-                                      ],
-                                    ),
-                                    if (cabinet.lastChecked != null)
-                                      Text(
-                                        'Updated: ${cabinet.lastChecked!.split('T')[0]}',
-                                        style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
                                       ),
-                                  ],
+                                      if (cabinet.lastChecked != null)
+                                        Text(
+                                          'Updated: ${cabinet.lastChecked!.split('T')[0]}',
+                                          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          TextButton.icon(
-                            onPressed: () => TransferCabinetSheet.show(context),
-                            icon: const Icon(Icons.devices_outlined, size: 18),
-                            label: const Text('Transfer'),
-                            style: TextButton.styleFrom(
-                              minimumSize: const Size(0, 44),
+                            TextButton.icon(
+                              onPressed: () => TransferCabinetSheet.show(context),
+                              icon: const Icon(Icons.devices_outlined, size: 18),
+                              label: const Text('Transfer'),
+                              style: TextButton.styleFrom(
+                                minimumSize: const Size(0, 44),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
 
                   // Empty State or Prescription + OTC/Supplement Lists
                   if (cabinet.cabinet.isEmpty && cabinet.supplements.isEmpty)
@@ -317,6 +660,19 @@ class _HomeScreenState extends State<HomeScreen> {
                               reminder: cabinet.reminderFor(drug.rxcui),
                               onReminderTap: () => ReminderSheet.show(context, drug),
                               onToggleTaken: () => cabinet.toggleTakenToday(drug.rxcui),
+                              refill: cabinet.refillFor(drug.rxcui),
+                              onRefillTap: () => RefillSetupSheet.show(context, drug),
+                              onMarkRefilled: () async {
+                                await cabinet.markRefilledToday(drug.rxcui);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('${drug.displayName} marked refilled today'),
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              },
                               onTap: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
@@ -408,15 +764,288 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
+            );
+  }
+
+  Widget _buildDesktopHeader(BuildContext context, CabinetProvider cabinet, ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    final borderColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.7);
+    final cardBg = isDark ? const Color(0xFF1A2423) : Colors.white;
+
+    final totalRx = cabinet.cabinet.length;
+    final totalOtc = cabinet.supplements.length;
+    final genericCount = cabinet.genericLaunchedCount;
+    final brandOnlyCount = (totalRx - genericCount).clamp(0, totalRx);
+    final refillsDue = cabinet.refillsDueCount;
+    final refillsTracked = cabinet.refillsTrackedCount;
+    final nextRefill = cabinet.nextRefillDue;
+
+    // Smart Fallback 4th KPI Card:
+    // 1. Active FDA Shortages (highest urgency)
+    // 2. Today's Doses (if daily reminders are configured)
+    // 3. Est. Generic Cost Gap (NADAC acquisition spread)
+    final String fourthLabel;
+    final String fourthValue;
+    final String fourthSub;
+    final IconData fourthIcon;
+    final Color fourthAccent;
+
+    if (cabinet.shortageCount > 0) {
+      fourthLabel = 'FDA SHORTAGES';
+      fourthValue = '${cabinet.shortageCount} Active';
+      fourthSub = 'Supply alert in cabinet';
+      fourthIcon = Icons.warning_amber_rounded;
+      fourthAccent = Colors.orange.shade700;
+    } else if (cabinet.enabledRemindersCount > 0) {
+      final taken = cabinet.takenTodayCount;
+      final totalRem = cabinet.enabledRemindersCount;
+      fourthLabel = "TODAY'S DOSES";
+      fourthValue = '$taken of $totalRem';
+      fourthSub = taken == totalRem ? 'All scheduled doses taken' : 'Doses marked taken today';
+      fourthIcon = Icons.check_circle_outline_rounded;
+      fourthAccent = taken == totalRem ? Colors.green.shade600 : Colors.teal.shade600;
+    } else {
+      fourthLabel = 'EST. GENERIC GAP';
+      fourthValue = cabinet.maxSavingsAvailable > 0
+          ? 'Up to ${cabinet.maxSavingsAvailable.toStringAsFixed(0)}%'
+          : '—';
+      fourthSub = 'NADAC brand vs. generic gap';
+      fourthIcon = Icons.savings_outlined;
+      fourthAccent = Colors.teal.shade700;
+    }
+
+    // Refills Due 3rd KPI Card
+    final String refillValue;
+    final String refillSub;
+    final Color refillAccent;
+    final IconData refillIcon;
+
+    if (refillsDue > 0) {
+      refillValue = '$refillsDue Due';
+      refillSub = nextRefill != null
+          ? '${nextRefill.drugName} • ${nextRefill.statusLabel()}'
+          : 'Refill window open';
+      refillAccent = Colors.amber.shade800;
+      refillIcon = Icons.schedule_rounded;
+    } else if (refillsTracked > 0) {
+      refillValue = 'All Stocked';
+      refillSub = nextRefill != null
+          ? 'Next: ${nextRefill.drugName} (${nextRefill.nextRefillFormatted})'
+          : '$refillsTracked prescriptions tracked';
+      refillAccent = Colors.indigo.shade600;
+      refillIcon = Icons.event_repeat_rounded;
+    } else {
+      refillValue = 'Not Set';
+      refillSub = 'Tap Track Refill on any Rx';
+      refillAccent = theme.colorScheme.onSurfaceVariant;
+      refillIcon = Icons.event_repeat_rounded;
+    }
+
+    Widget buildKpiCard({
+      required String label,
+      required String value,
+      required String sublabel,
+      required IconData icon,
+      required Color accent,
+      bool highlight = false,
+    }) {
+      return Expanded(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: highlight
+                ? accent.withValues(alpha: isDark ? 0.16 : 0.08)
+                : cardBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: highlight ? accent.withValues(alpha: 0.45) : borderColor,
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const SearchScreen()),
-          );
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Add Medication'),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 16, color: accent),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.6,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: highlight ? accent : theme.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                sublabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 22, 24, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top compact title row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (cabinet.hasMultipleCabinets || !cabinet.activeCabinet.isDefault) ...[
+                          Container(
+                            width: 12,
+                            height: 12,
+                            margin: const EdgeInsets.only(right: 9),
+                            decoration: BoxDecoration(
+                              color: Color(cabinet.activeCabinet.colorValue),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                        Flexible(
+                          child: Text(
+                            cabinet.activeCabinet.headerTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        InkWell(
+                          onTap: () => PrivacyPromiseSheet.show(context),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.verified_user_outlined,
+                                size: 14,
+                                color: Colors.teal.shade600,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Stored locally • Zero tracking',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.teal.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (cabinet.lastChecked != null)
+                          Text(
+                            '• FDA/NADAC synced ${cabinet.lastChecked!.split('T')[0]}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              FilledButton.icon(
+                onPressed: () => setState(() => _desktopNavIndex = 1),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add Medication'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+
+          // 4-card honest KPI strip
+          Row(
+            children: [
+              buildKpiCard(
+                label: 'WATCHED MEDS',
+                value: '$totalRx Rx',
+                sublabel: totalOtc > 0
+                    ? '+ $totalOtc OTC / supplement'
+                    : 'In this cabinet',
+                icon: Icons.medication_outlined,
+                accent: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: 12),
+              buildKpiCard(
+                label: 'GENERICS AVAILABLE',
+                value: totalRx == 0 ? '0' : '$genericCount of $totalRx',
+                sublabel: brandOnlyCount > 0
+                    ? '$brandOnlyCount brand-only watch'
+                    : 'FDA commercial generics',
+                icon: Icons.check_circle_outline,
+                accent: Colors.green.shade700,
+              ),
+              const SizedBox(width: 12),
+              buildKpiCard(
+                label: 'REFILLS DUE',
+                value: refillValue,
+                sublabel: refillSub,
+                icon: refillIcon,
+                accent: refillAccent,
+                highlight: refillsDue > 0,
+              ),
+              const SizedBox(width: 12),
+              buildKpiCard(
+                label: fourthLabel,
+                value: fourthValue,
+                sublabel: fourthSub,
+                icon: fourthIcon,
+                accent: fourthAccent,
+                highlight: cabinet.shortageCount > 0,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -510,9 +1139,13 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SearchScreen()),
-                );
+                if (MediaQuery.sizeOf(context).width >= 960) {
+                  setState(() => _desktopNavIndex = 1);
+                } else {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SearchScreen()),
+                  );
+                }
               },
               icon: const Icon(Icons.add),
               label: const Text('Add Your First Medication'),

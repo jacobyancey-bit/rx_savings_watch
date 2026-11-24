@@ -26,35 +26,13 @@ class RxSavingsWatchApp extends StatelessWidget {
               final mediaQuery = MediaQuery.of(context);
               final systemScale = mediaQuery.textScaler.scale(1.0);
               final combinedScale = (systemScale * cabinet.textScale).clamp(1.0, 1.85);
-              final isWideDesktop = mediaQuery.size.width > 860;
               final content = child ?? const SizedBox.shrink();
 
               return MediaQuery(
                 data: mediaQuery.copyWith(
                   textScaler: TextScaler.linear(combinedScale),
                 ),
-                child: isWideDesktop
-                    ? ColoredBox(
-                        color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 820),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.08),
-                                    blurRadius: 24,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: content,
-                            ),
-                          ),
-                        ),
-                      )
-                    : content,
+                child: content,
               );
             },
             theme: ThemeData(

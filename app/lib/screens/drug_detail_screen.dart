@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/link.dart';
 import '../models/drug.dart';
+import '../models/refill_info.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
 import '../widgets/doctor_handout_sheet.dart';
+import '../widgets/refill_setup_sheet.dart';
 import '../widgets/reminder_sheet.dart';
-import '../widgets/signal_badges.dart';
 
 class DrugDetailScreen extends StatefulWidget {
   final Drug drug;
   final String? initialStrength;
+  final List<Map<String, dynamic>>? initialPartners;
 
   const DrugDetailScreen({
     super.key,
     required this.drug,
     this.initialStrength,
+    this.initialPartners,
   });
 
   @override
@@ -24,6 +27,7 @@ class DrugDetailScreen extends StatefulWidget {
 
 class _DrugDetailScreenState extends State<DrugDetailScreen> {
   final TextEditingController _copayController = TextEditingController(text: '60');
+  final TextEditingController _zipController = TextEditingController();
   double _monthlyBrandCopay = 60.0;
   final double _monthlyGenericCopay = 10.0;
   late Drug _drug;
@@ -132,6 +136,13 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     }
     _loadLiveDetailsIfNeeded();
     _loadVerifiedPartners();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final savedZip = context.read<CabinetProvider>().localZipCode;
+      if (savedZip != null && savedZip.isNotEmpty) {
+        _zipController.text = savedZip;
+      }
+    });
   }
 
   Future<void> _loadLiveDetailsIfNeeded() async {
@@ -163,6 +174,12 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   }
 
   Future<void> _loadVerifiedPartners() async {
+    if (widget.initialPartners != null) {
+      if (mounted) {
+        setState(() => _verifiedPartners = List<Map<String, dynamic>>.from(widget.initialPartners!));
+      }
+      return;
+    }
     final provider = context.read<CabinetProvider>();
     final api = ApiService(baseUrl: provider.serverUrl);
     final options = await api.getSavingsOptions(widget.drug.rxcui);
@@ -183,6 +200,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   @override
   void dispose() {
     _copayController.dispose();
+    _zipController.dispose();
     super.dispose();
   }
 
@@ -193,6 +211,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     final drug = _drug;
     final isWatched = cabinet.isWatched(drug.rxcui);
     final reminder = cabinet.reminderFor(drug.rxcui);
+    final refill = cabinet.refillFor(drug.rxcui);
     final p = drug.pricing;
 
     final annualSavings = (_monthlyBrandCopay > _monthlyGenericCopay)
@@ -233,35 +252,6 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          drug.drugType.toUpperCase().replaceAll('_', ' '),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'RxCUI: ${drug.rxcui}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
                   Text(
                     drug.displayName,
                     style: theme.textTheme.headlineSmall?.copyWith(
@@ -370,6 +360,13 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                               : 'Set Reminder',
                         ),
                       ),
+                      OutlinedButton.icon(
+                        onPressed: () => RefillSetupSheet.show(context, drug),
+                        icon: const Icon(Icons.event_repeat_rounded, size: 17),
+                        label: Text(
+                          refill != null ? refill.statusLabel() : 'Track Refill',
+                        ),
+                      ),
                       FilledButton.tonalIcon(
                         onPressed: () async {
                           if (isWatched) {
@@ -381,9 +378,21 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                             }
                           } else {
                             await cabinet.addDrug(drug);
+                            if (!context.mounted) return;
+                            final tracked = await RefillSetupSheet.show(
+                              context,
+                              drug,
+                              isAddFlow: true,
+                            );
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('${drug.displayName} added to your cabinet')),
+                                SnackBar(
+                                  content: Text(
+                                    tracked == true
+                                        ? '${drug.displayName} added with refill tracking'
+                                        : '${drug.displayName} added to your cabinet',
+                                  ),
+                                ),
                               );
                             }
                           }
@@ -401,626 +410,60 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               ),
             ),
 
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
 
-            // Plain-English Substitution & Official Sources Trust Card (low-glare, theme-aware)
+            // Clean, patient-first 2-column layout on desktop (stacked on mobile)
             Builder(
               builder: (context) {
-                final isDark = theme.brightness == Brightness.dark;
-                final accent = drug.commercialGenericAvailable
-                    ? (drug.isAutoSubstitutable ? Colors.teal : Colors.indigo)
-                    : Colors.blueGrey;
-                final cardBg = isDark
-                    ? accent.withValues(alpha: 0.14)
-                    : accent.withValues(alpha: 0.07);
-                final cardBorder = isDark
-                    ? accent.withValues(alpha: 0.35)
-                    : accent.withValues(alpha: 0.28);
-                final iconColor = isDark ? accent.shade200 : accent.shade700;
+                final isWide = MediaQuery.sizeOf(context).width >= 900;
+                final matchingShortages = _shortagesForSelectedStrength(drug);
 
-                return Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: cardBg,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: cardBorder),
-                  ),
-                  child: Column(
+                final leftCards = <Widget>[
+                  if (matchingShortages.isNotEmpty)
+                    _buildShortageCard(context, theme, matchingShortages),
+                  if (refill != null)
+                    _buildRefillCard(context, theme, cabinet, drug, refill),
+                  _buildSubstitutionCard(context, theme, drug),
+                ];
+
+                final rightCards = <Widget>[
+                  if (_verifiedPartners.isNotEmpty)
+                    _buildPartnersCard(context, theme, drug),
+                  if (_discountCard != null)
+                    _buildDiscountCard(context, theme),
+                  if (_brandAssistance != null)
+                    _buildBrandAssistanceCard(context, theme),
+                  _buildPricingAndCalculatorCard(context, theme, drug, p, annualSavings),
+                ];
+
+                Widget buildColumn(List<Widget> items) {
+                  final spaced = <Widget>[];
+                  for (var i = 0; i < items.length; i++) {
+                    if (i > 0) spaced.add(const SizedBox(height: 18));
+                    spaced.add(items[i]);
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: spaced,
+                  );
+                }
+
+                if (isWide) {
+                  return Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Icon(
-                            drug.isAutoSubstitutable
-                                ? Icons.local_pharmacy
-                                : Icons.medical_information_outlined,
-                            color: iconColor,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Pharmacy Substitution Guidance',
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                                color: theme.colorScheme.onSurface,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      if (drug.commercialGenericAvailable || drug.isUnbrandedGeneric) ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(bottom: 10),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surface,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: cardBorder),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                drug.isUnbrandedGeneric
-                                    ? (drug.referenceBrands.isNotEmpty
-                                        ? 'Generic Version of Brand-Name Drug(s):'
-                                        : 'Already a Generic Medication:')
-                                    : (drug.drugType == 'biologic'
-                                        ? 'Available Biosimilar Prescription:'
-                                        : 'Available Generic Prescription:'),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: iconColor,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                drug.isUnbrandedGeneric
-                                    ? (drug.referenceBrands.isNotEmpty
-                                        ? drug.referenceBrands.join(', ')
-                                        : drug.genericName)
-                                    : drug.genericName,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: theme.colorScheme.onSurface,
-                                ),
-                              ),
-                              if (drug.genericManufacturers.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'FDA-approved manufacturers: ${drug.genericManufacturers.join(', ')}',
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                      Text(
-                        drug.substitutionPlainGuidance,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          height: 1.4,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                      if (drug.verificationSources.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          'Verified using: ${drug.verificationSources.join(' • ')}',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: theme.colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+                      Expanded(flex: 6, child: buildColumn(leftCards)),
+                      const SizedBox(width: 20),
+                      Expanded(flex: 5, child: buildColumn(rightCards)),
                     ],
-                  ),
-                );
+                  );
+                }
+
+                return buildColumn([...leftCards, ...rightCards]);
               },
             ),
 
-            const SizedBox(height: 24),
-
-            // 2-Signal Status Section
-            Text(
-              '2-Signal Commercial Launch Verification',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'A commercial generic alert requires BOTH regulatory FDA approval AND active wholesale commercial distribution.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 12),
-            SignalBadges(
-              hasApprovedGeneric: drug.hasApprovedGeneric,
-              commercialGenericAvailable: drug.commercialGenericAvailable,
-              compact: false,
-            ),
-
-            const SizedBox(height: 24),
-
-            // Pricing & Savings Section
-            Text(
-              'CMS NADAC Pricing & Acquisition Savings',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: theme.colorScheme.outlineVariant),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Brand Acquisition Cost:'),
-                      Text(
-                        p?.brandNadacUnitPrice != null
-                            ? '\$${p!.brandNadacUnitPrice!.toStringAsFixed(2)} / unit'
-                            : 'Not reported',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Generic Acquisition Cost:'),
-                      Text(
-                        p?.genericNadacUnitPrice != null
-                            ? '\$${p!.genericNadacUnitPrice!.toStringAsFixed(2)} / unit'
-                            : (drug.commercialGenericAvailable ? 'Available' : 'Pending market launch'),
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: p?.genericNadacUnitPrice != null
-                              ? (theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade800)
-                              : theme.colorScheme.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (p != null && p.estimatedSavingsPct != null && p.estimatedSavingsPct! > 0) ...[
-                    const Divider(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Estimated Savings:', style: TextStyle(fontWeight: FontWeight.bold)),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.teal.shade700,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '~${p.estimatedSavingsPct!.toStringAsFixed(0)}% OFF',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-
-            // Annual Out-of-Pocket Copay Calculator
-            if (drug.commercialGenericAvailable) ...[
-              const SizedBox(height: 24),
-              Text(
-                'Personalized Annual Copay Calculator',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.brightness == Brightness.dark
-                      ? Colors.teal.withValues(alpha: 0.12)
-                      : Colors.teal.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: theme.brightness == Brightness.dark
-                        ? Colors.teal.withValues(alpha: 0.35)
-                        : Colors.teal.withValues(alpha: 0.25),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Your current monthly brand copay (\$):',
-                            style: TextStyle(fontSize: 13.5, color: theme.colorScheme.onSurface),
-                          ),
-                        ),
-                        SizedBox(
-                          width: 80,
-                          child: TextField(
-                            controller: _copayController,
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            decoration: InputDecoration(
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            onChanged: (val) {
-                              setState(() {
-                                _monthlyBrandCopay = double.tryParse(val) ?? 0.0;
-                              });
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Standard Tier 1 Generic Copay:'),
-                        Text('\$${_monthlyGenericCopay.toStringAsFixed(0)} / mo', style: const TextStyle(fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                    const Divider(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Projected Annual Savings:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        Text(
-                          '\$${annualSavings.toStringAsFixed(0)} / year',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            // Supply Shortages — filtered strictly to the user's selected dosage strength
-            ...() {
-              final matchingShortages = _shortagesForSelectedStrength(drug);
-              if (matchingShortages.isEmpty) return const <Widget>[];
-              return <Widget>[
-                const SizedBox(height: 24),
-                Text(
-                  _selectedStrength != null
-                      ? 'FDA Drug Shortage Report ($_selectedStrength)'
-                      : 'FDA Drug Shortage Report',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: theme.brightness == Brightness.dark ? Colors.amber.shade200 : Colors.orange.shade900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: theme.brightness == Brightness.dark
-                        ? Colors.amber.withValues(alpha: 0.14)
-                        : Colors.orange.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: theme.brightness == Brightness.dark
-                          ? Colors.amber.withValues(alpha: 0.4)
-                          : Colors.orange.withValues(alpha: 0.35),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            color: theme.brightness == Brightness.dark ? Colors.amber.shade300 : Colors.orange.shade800,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Status: Current Shortage',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: theme.colorScheme.onSurface,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      for (final s in matchingShortages) ...[
-                        if (s['dosage_form'] != null && s['dosage_form'].toString().isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text(
-                              'Affected Dose & Form: ${s['dosage_form']}',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: theme.colorScheme.onSurface,
-                              ),
-                            ),
-                          ),
-                        if (s['reason'] != null)
-                          Text(
-                            'Reason: ${s['reason']}',
-                            style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
-                          ),
-                        if (s['start_date'] != null)
-                          Text(
-                            'Reported: ${s['start_date']}',
-                            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
-                          ),
-                        const SizedBox(height: 6),
-                      ],
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                          onPressed: () => launchUrl(
-                            Uri.parse('https://www.accessdata.fda.gov/scripts/drugshortages/default.cfm'),
-                            mode: LaunchMode.externalApplication,
-                          ),
-                          icon: const Icon(Icons.open_in_new, size: 16),
-                          label: const Text('Verify on official FDA Drug Shortages'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ];
-            }(),
-
-            // Alerts Log
-            if (drug.alerts.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              Text(
-                'Verified Launch Alerts',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              for (final alert in drug.alerts)
-                Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    leading: const Icon(Icons.notifications_active, color: Colors.teal),
-                    title: Text(
-                      alert.eventType.replaceAll('_', ' ').toUpperCase(),
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                    ),
-                    subtitle: Text(alert.signalSummary, style: const TextStyle(fontSize: 12)),
-                    trailing: Text(
-                      alert.detectedAt.split('T')[0],
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                    ),
-                  ),
-                ),
-            ],
-            // Embedded Pharmacy Discount Card (activates automatically when PBM_BIN & PBM_GROUP are configured)
-            if (_discountCard != null) ...[
-              const SizedBox(height: 24),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.teal.withValues(alpha: theme.brightness == Brightness.dark ? 0.18 : 0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.teal.withValues(alpha: 0.45), width: 1.5),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.credit_card_outlined,
-                          color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade800,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _discountCard!['name']?.toString() ?? 'Pharmacy Discount Card',
-                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Show these 4 numbers to your pharmacist for cash savings (no account required):',
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 16,
-                      runSpacing: 8,
-                      children: [
-                        _buildCodePill(context, 'BIN', _discountCard!['bin']?.toString() ?? ''),
-                        if (_discountCard!['pcn'] != null)
-                          _buildCodePill(context, 'PCN', _discountCard!['pcn'].toString()),
-                        _buildCodePill(context, 'GROUP', _discountCard!['group']?.toString() ?? ''),
-                        _buildCodePill(context, 'MEMBER ID', _discountCard!['member_id']?.toString() ?? ''),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            // Official Manufacturer Copay Card & Medicare Patient Assistance (for brand-only / biologic drugs)
-            if (_brandAssistance != null) ...[
-              const SizedBox(height: 24),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.health_and_safety_outlined,
-                          color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade700,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Manufacturer Savings & Patient Assistance',
-                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_brandAssistance!['note'] != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        _brandAssistance!['note'].toString(),
-                        style: theme.textTheme.bodyMedium?.copyWith(height: 1.35),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        if (_brandAssistance!['url'] != null)
-                          _buildPartnerButton(
-                            context,
-                            label: _brandAssistance!['program_name']?.toString() ?? 'Manufacturer Savings Card',
-                            icon: Icons.card_giftcard_outlined,
-                            uri: Uri.parse(_brandAssistance!['url'].toString()),
-                          ),
-                        if (_brandAssistance!['pap_url'] != null)
-                          _buildPartnerButton(
-                            context,
-                            label: 'Patient Assistance Program',
-                            icon: Icons.volunteer_activism_outlined,
-                            uri: Uri.parse(_brandAssistance!['pap_url'].toString()),
-                          ),
-                        if (_brandAssistance!['medicare_extra_help_url'] != null)
-                          _buildPartnerButton(
-                            context,
-                            label: 'Medicare Extra Help (SSA.gov)',
-                            icon: Icons.account_balance_outlined,
-                            uri: Uri.parse(_brandAssistance!['medicare_extra_help_url'].toString()),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            // Compare Cash & Discount Pharmacy Prices (ONLY shown when verified partners exist!)
-            if (_verifiedPartners.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.local_offer_outlined,
-                          color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade700,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Compare Cash & Discount Prices',
-                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Verified options currently available for ${drug.displayName}:',
-                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.35),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: _verifiedPartners.map((partner) {
-                        final id = partner['id']?.toString() ?? '';
-                        final baseLabel = partner['label']?.toString() ?? 'Pharmacy';
-                        final priceHint = partner['price_hint']?.toString();
-                        final label = (priceHint != null && priceHint.isNotEmpty)
-                            ? '$baseLabel ($priceHint)'
-                            : baseLabel;
-                        final url = partner['url']?.toString() ?? '';
-                        final icon = switch (id) {
-                          'cost_plus_drugs' => Icons.medication_outlined,
-                          'amazon_pharmacy' => Icons.local_shipping_outlined,
-                          'singlecare' => Icons.confirmation_number_outlined,
-                          'goodrx' => Icons.savings_outlined,
-                          _ => Icons.open_in_new,
-                        };
-                        return _buildPartnerButton(
-                          context,
-                          label: label,
-                          icon: icon,
-                          uri: Uri.parse(url),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Transparency notice: As an Amazon Associate I earn from qualifying purchases. Some pharmacy links may earn Dangling Dice Studios a small referral fee at zero cost to you. No personal data is shared when you open a link.',
-                      style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant, height: 1.35),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
             // Zero-PII Anonymous Data Quality Flag Button
             Center(
@@ -1110,6 +553,141 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     );
   }
 
+  Widget _buildRefillCard(
+    BuildContext context,
+    ThemeData theme,
+    CabinetProvider cabinet,
+    Drug drug,
+    RefillInfo refill,
+  ) {
+    final isDark = theme.brightness == Brightness.dark;
+    final urgency = refill.urgency();
+    final Color accent;
+    switch (urgency) {
+      case RefillUrgency.overdue:
+        accent = Colors.red;
+        break;
+      case RefillUrgency.dueSoon:
+        accent = Colors.amber.shade800;
+        break;
+      case RefillUrgency.ok:
+        accent = Colors.teal;
+        break;
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? accent.withValues(alpha: 0.14) : accent.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? accent.withValues(alpha: 0.35) : accent.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.event_repeat_rounded, color: accent, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Prescription Refill & Supply',
+                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  refill.statusLabel(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: refill.supplyProgress(),
+              minHeight: 8,
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              valueColor: AlwaysStoppedAnimation<Color>(accent),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 16,
+            runSpacing: 4,
+            children: [
+              Text(
+                'Day ${refill.daysElapsed()} of ${refill.daySupply}',
+                style: TextStyle(fontSize: 12.5, color: theme.colorScheme.onSurfaceVariant),
+              ),
+              Text(
+                'Last filled: ${refill.lastFilledFormatted}',
+                style: TextStyle(fontSize: 12.5, color: theme.colorScheme.onSurfaceVariant),
+              ),
+              Text(
+                'Next refill: ${refill.nextRefillFormatted}',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              if (refill.refillsRemaining != null)
+                Text(
+                  refill.needsDoctorRenewal
+                      ? '0 refills left — contact prescriber'
+                      : '${refill.refillsRemaining} refill${refill.refillsRemaining == 1 ? '' : 's'} remaining',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: refill.needsDoctorRenewal ? Colors.red.shade700 : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: () async {
+                  await cabinet.markRefilledToday(drug.rxcui);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('${drug.displayName} marked refilled today')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.refresh_rounded, size: 17),
+                label: const Text('Mark Refilled Today'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => RefillSetupSheet.show(context, drug),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Edit Supply'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCodePill(BuildContext context, String label, String value) {
     final theme = Theme.of(context);
     return Container(
@@ -1144,26 +722,602 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     );
   }
 
+  Widget _buildSubstitutionCard(BuildContext context, ThemeData theme, Drug drug) {
+    final isDark = theme.brightness == Brightness.dark;
+    final accent = drug.commercialGenericAvailable
+        ? (drug.isAutoSubstitutable ? Colors.teal : Colors.indigo)
+        : Colors.blueGrey;
+    final cardBg = isDark
+        ? accent.withValues(alpha: 0.14)
+        : accent.withValues(alpha: 0.07);
+    final cardBorder = isDark
+        ? accent.withValues(alpha: 0.35)
+        : accent.withValues(alpha: 0.28);
+    final iconColor = isDark ? accent.shade200 : accent.shade700;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                drug.isAutoSubstitutable
+                    ? Icons.local_pharmacy
+                    : Icons.medical_information_outlined,
+                color: iconColor,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Generic Option & Pharmacy Guidance',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (drug.commercialGenericAvailable || drug.isUnbrandedGeneric) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: cardBorder),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    drug.isUnbrandedGeneric
+                        ? (drug.referenceBrands.isNotEmpty
+                            ? 'Generic Version of Brand-Name Drug(s):'
+                            : 'Already a Generic Medication:')
+                        : (drug.drugType == 'biologic'
+                            ? 'Available Biosimilar Prescription:'
+                            : 'Ask Your Pharmacy For:'),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: iconColor,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    drug.isUnbrandedGeneric
+                        ? (drug.referenceBrands.isNotEmpty
+                            ? drug.referenceBrands.join(', ')
+                            : drug.genericName)
+                        : drug.genericName,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          Text(
+            drug.substitutionPlainGuidance,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              height: 1.4,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShortageCard(
+    BuildContext context,
+    ThemeData theme,
+    List<Map<String, dynamic>> matchingShortages,
+  ) {
+    final isDark = theme.brightness == Brightness.dark;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.amber.withValues(alpha: 0.14)
+            : Colors.orange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark
+              ? Colors.amber.withValues(alpha: 0.4)
+              : Colors.orange.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: isDark ? Colors.amber.shade300 : Colors.orange.shade800,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _selectedStrength != null
+                      ? 'Active FDA Shortage ($_selectedStrength)'
+                      : 'Active FDA Supply Shortage',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final s in matchingShortages) ...[
+            if (s['dosage_form'] != null && s['dosage_form'].toString().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  'Affected Dose & Form: ${s['dosage_form']}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            if (s['reason'] != null)
+              Text(
+                'Reason: ${s['reason']}',
+                style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
+              ),
+            if (s['start_date'] != null)
+              Text(
+                'Reported: ${s['start_date']}',
+                style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+              ),
+            const SizedBox(height: 6),
+          ],
+          Link(
+            uri: Uri.parse('https://www.accessdata.fda.gov/scripts/drugshortages/default.cfm'),
+            target: LinkTarget.blank,
+            builder: (context, followLink) => TextButton.icon(
+              style: TextButton.styleFrom(padding: EdgeInsets.zero),
+              onPressed: followLink,
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('View FDA Drug Shortages'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Uri _buildClientPartnerUri(String id, String rawUrl, String? localZip) {
+    final base = Uri.parse(rawUrl);
+    if (localZip == null || localZip.length != 5) return base;
+    final params = Map<String, String>.from(base.queryParameters);
+    switch (id) {
+      case 'goodrx':
+        params['location'] = localZip;
+        return base.replace(queryParameters: params);
+      case 'singlecare':
+      case 'optum_perks':
+      case 'wellrx':
+        params['zip'] = localZip;
+        return base.replace(queryParameters: params);
+      default:
+        return base;
+    }
+  }
+
+  Widget _buildPartnersCard(BuildContext context, ThemeData theme, Drug drug) {
+    final cabinet = context.watch<CabinetProvider>();
+    final localZip = cabinet.localZipCode;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.local_offer_outlined,
+                color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade700,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Compare Cash & Pharmacy Prices',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Free cash-pay prices and retail pharmacy coupons for ${drug.displayName} (no account required):',
+            style: theme.textTheme.bodyMedium?.copyWith(height: 1.35),
+          ),
+          const SizedBox(height: 12),
+
+          // Optional on-device 5-digit ZIP code (never sent to Rx Savings Watch servers)
+          Row(
+            children: [
+              SizedBox(
+                width: 156,
+                child: TextField(
+                  controller: _zipController,
+                  keyboardType: TextInputType.number,
+                  maxLength: 5,
+                  decoration: InputDecoration(
+                    counterText: '',
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.location_on_outlined, size: 18),
+                    hintText: 'ZIP (optional)',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  ),
+                  onChanged: (val) {
+                    final digits = val.replaceAll(RegExp(r'[^0-9]'), '');
+                    if (digits.length == 5) {
+                      cabinet.setLocalZipCode(digits);
+                    } else if (digits.isEmpty && localZip != null) {
+                      cabinet.setLocalZipCode(null);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  localZip != null
+                      ? 'Saved locally for $localZip • Never sent to our servers'
+                      : 'Optional • Stored on this device only to pre-fill local coupons',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: _verifiedPartners.map((partner) {
+              final id = partner['id']?.toString() ?? '';
+              final baseLabel = partner['label']?.toString() ?? 'Pharmacy';
+              final priceHint = partner['price_hint']?.toString();
+              final label = (priceHint != null && priceHint.isNotEmpty)
+                  ? '$baseLabel ($priceHint)'
+                  : baseLabel;
+              final url = partner['url']?.toString() ?? '';
+              final icon = switch (id) {
+                'cost_plus_drugs' => Icons.medication_outlined,
+                'amazon_pharmacy' => Icons.local_shipping_outlined,
+                'singlecare' => Icons.confirmation_number_outlined,
+                'goodrx' => Icons.savings_outlined,
+                'optum_perks' => Icons.local_pharmacy_outlined,
+                'wellrx' => Icons.discount_outlined,
+                _ => Icons.open_in_new,
+              };
+              return _buildPartnerButton(
+                context,
+                label: label,
+                icon: icon,
+                uri: _buildClientPartnerUri(id, url, localZip),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Cash-pay discounts only — not insurance. Clicking an external link opens that pharmacy\'s site under its own privacy policy. As an Amazon Associate we earn from qualifying purchases; some links may earn a small referral fee at zero cost to you.',
+            style: TextStyle(fontSize: 11.5, color: theme.colorScheme.onSurfaceVariant, height: 1.35),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiscountCard(BuildContext context, ThemeData theme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.teal.withValues(alpha: theme.brightness == Brightness.dark ? 0.18 : 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.teal.withValues(alpha: 0.45), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.credit_card_outlined,
+                color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade800,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _discountCard!['name']?.toString() ?? 'Pharmacy Discount Card',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Show these 4 numbers to your pharmacist for cash savings (no account required):',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              _buildCodePill(context, 'BIN', _discountCard!['bin']?.toString() ?? ''),
+              if (_discountCard!['pcn'] != null)
+                _buildCodePill(context, 'PCN', _discountCard!['pcn'].toString()),
+              _buildCodePill(context, 'GROUP', _discountCard!['group']?.toString() ?? ''),
+              _buildCodePill(context, 'MEMBER ID', _discountCard!['member_id']?.toString() ?? ''),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBrandAssistanceCard(BuildContext context, ThemeData theme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.health_and_safety_outlined,
+                color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade700,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Manufacturer Savings & Assistance',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          if (_brandAssistance!['note'] != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _brandAssistance!['note'].toString(),
+              style: theme.textTheme.bodyMedium?.copyWith(height: 1.35),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              if (_brandAssistance!['url'] != null)
+                _buildPartnerButton(
+                  context,
+                  label: _brandAssistance!['program_name']?.toString() ?? 'Manufacturer Savings Card',
+                  icon: Icons.card_giftcard_outlined,
+                  uri: Uri.parse(_brandAssistance!['url'].toString()),
+                ),
+              if (_brandAssistance!['pap_url'] != null)
+                _buildPartnerButton(
+                  context,
+                  label: 'Patient Assistance Program',
+                  icon: Icons.volunteer_activism_outlined,
+                  uri: Uri.parse(_brandAssistance!['pap_url'].toString()),
+                ),
+              if (_brandAssistance!['medicare_extra_help_url'] != null)
+                _buildPartnerButton(
+                  context,
+                  label: 'Medicare Extra Help (SSA.gov)',
+                  icon: Icons.account_balance_outlined,
+                  uri: Uri.parse(_brandAssistance!['medicare_extra_help_url'].toString()),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPricingAndCalculatorCard(
+    BuildContext context,
+    ThemeData theme,
+    Drug drug,
+    dynamic p,
+    double annualSavings,
+  ) {
+    final isDark = theme.brightness == Brightness.dark;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.savings_outlined,
+                color: isDark ? Colors.teal.shade200 : Colors.teal.shade700,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Estimated Cost & Savings',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              if (p != null && p.estimatedSavingsPct != null && p.estimatedSavingsPct! > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.shade700,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '~${p.estimatedSavingsPct!.toStringAsFixed(0)}% GAP',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Brand Acquisition Cost:', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+              Text(
+                p?.brandNadacUnitPrice != null
+                    ? '\$${p!.brandNadacUnitPrice!.toStringAsFixed(2)} / unit'
+                    : 'Not reported',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Generic Acquisition Cost:', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+              Text(
+                p?.genericNadacUnitPrice != null
+                    ? '\$${p!.genericNadacUnitPrice!.toStringAsFixed(2)} / unit'
+                    : (drug.commercialGenericAvailable ? 'Available' : 'Brand-only'),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: p?.genericNadacUnitPrice != null
+                      ? (isDark ? Colors.teal.shade200 : Colors.teal.shade800)
+                      : theme.colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          if (drug.commercialGenericAvailable) ...[
+            const Divider(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Your monthly brand copay (\$):',
+                    style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
+                  ),
+                ),
+                SizedBox(
+                  width: 78,
+                  child: TextField(
+                    controller: _copayController,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onChanged: (val) {
+                      setState(() {
+                        _monthlyBrandCopay = double.tryParse(val) ?? 0.0;
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Projected Annual Savings:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                ),
+                Text(
+                  '\$${annualSavings.toStringAsFixed(0)} / year',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.teal.shade200 : Colors.teal.shade800,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildPartnerButton(
     BuildContext context, {
     required String label,
     required IconData icon,
     required Uri uri,
   }) {
-    return OutlinedButton.icon(
-      onPressed: () async {
-        final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-        if (!ok && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not open $label link.')),
-          );
-        }
-      },
-      icon: Icon(icon, size: 18),
-      label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size(0, 48),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    return Link(
+      uri: uri,
+      target: LinkTarget.blank,
+      builder: (context, followLink) => OutlinedButton.icon(
+        onPressed: followLink,
+        icon: Icon(icon, size: 18),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        ),
       ),
     );
   }

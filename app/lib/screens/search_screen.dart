@@ -5,10 +5,13 @@ import '../models/drug.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
 import '../widgets/add_supplement_sheet.dart';
+import '../widgets/refill_setup_sheet.dart';
 import 'drug_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
+  final bool embedded;
+
+  const SearchScreen({super.key, this.embedded = false});
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -169,6 +172,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: !widget.embedded,
         title: const Text('Add Medication to Cabinet'),
         elevation: 0,
       ),
@@ -389,10 +393,20 @@ class _SearchScreenState extends State<SearchScreen> {
               : FilledButton.tonalIcon(
                   onPressed: () async {
                     await cabinet.addDrug(drug);
+                    if (!context.mounted) return;
+                    final tracked = await RefillSetupSheet.show(
+                      context,
+                      drug,
+                      isAddFlow: true,
+                    );
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('${drug.displayName} added to your cabinet'),
+                          content: Text(
+                            tracked == true
+                                ? '${drug.displayName} added with refill tracking'
+                                : '${drug.displayName} added to your cabinet',
+                          ),
                           behavior: SnackBarBehavior.floating,
                         ),
                       );

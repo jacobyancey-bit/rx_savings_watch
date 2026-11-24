@@ -149,23 +149,65 @@ function applyPartnerTracking(partnerId, rawUrl) {
   return rawUrl;
 }
 
+function buildPublicCouponPartners(drug) {
+  const primaryName = (drug.brand_name || drug.generic_name || '').trim();
+  const slug = toSlug(primaryName) || toSlug(drug.generic_name);
+  if (!slug || slug.length < 3) return [];
+
+  return [
+    {
+      id: 'singlecare',
+      label: 'SingleCare Coupon',
+      url: applyPartnerTracking('singlecare', `https://www.singlecare.com/prescription/${slug}`),
+      price_hint: null,
+    },
+    {
+      id: 'goodrx',
+      label: 'GoodRx Coupon',
+      url: applyPartnerTracking('goodrx', `https://www.goodrx.com/${slug}`),
+      price_hint: null,
+    },
+    {
+      id: 'optum_perks',
+      label: 'Optum Perks Coupon',
+      url: `https://perks.optum.com/drug/${slug}`,
+      price_hint: null,
+    },
+    {
+      id: 'wellrx',
+      label: 'WellRx Coupon',
+      url: `https://www.wellrx.com/prescriptions/${slug}/`,
+      price_hint: null,
+    },
+  ];
+}
+
 /**
  * Resolve & cache verified cash/discount pharmacy links for a drug.
- * Returns ONLY verified partners that actually have information for this prescription.
+ * Combines live Cost Plus Drugs pricing + Amazon Pharmacy (non-C-II) +
+ * reliable free retail pharmacy coupon networks (SingleCare, GoodRx, Optum Perks, WellRx).
  */
 async function getVerifiedPartnersForDrug(db, drug) {
-  // 1. Check SQLite 7-day cache first
+  const publicCoupons = buildPublicCouponPartners(drug);
+
+  // Skip external Cost Plus API probes during automated offline unit tests
+  if (process.env.NODE_ENV === 'test') {
+    return publicCoupons;
+  }
+
+  // 1. Check SQLite 7-day cache for Cost Plus Drugs + Amazon Pharmacy
   const cached = db.prepare(`
     SELECT partner_id, label, url, price_hint, verified, checked_at
     FROM partner_links
     WHERE drug_id = ?
+      AND partner_id IN ('cost_plus_drugs', 'amazon_pharmacy')
   `).all(drug.id);
 
   if (cached.length > 0) {
     const latest = cached[0].checked_at;
     const ageMs = latest ? Date.now() - new Date(latest.replace(' ', 'T') + 'Z').getTime() : CACHE_TTL_MS + 1;
     if (ageMs < CACHE_TTL_MS) {
-      return cached
+      const directPharmacies = cached
         .filter(r => r.verified === 1 && r.url)
         .map(r => ({
           id: r.partner_id,
@@ -173,38 +215,18 @@ async function getVerifiedPartnersForDrug(db, drug) {
           url: applyPartnerTracking(r.partner_id, r.url),
           price_hint: r.price_hint || null,
         }));
+      return [...directPharmacies, ...publicCoupons];
     }
   }
 
-  // Skip external probes during automated offline unit tests
-  if (process.env.NODE_ENV === 'test') {
-    return [];
-  }
-
   const primaryName = drug.brand_name || drug.generic_name;
-  const slug = toSlug(primaryName);
-  const genericSlug = toSlug(drug.generic_name);
   const c2 = isScheduleII(drug);
-
-  // Run checks in parallel
-  const [cpdCatalog, singleCareOk, goodRxOk] = await Promise.all([
-    c2 ? Promise.resolve([]) : getCostPlusDrugsCatalog(),
-    slug.length >= 3
-      ? probeUrlExists(`https://www.singlecare.com/prescription/${slug}`)
-      : Promise.resolve(false),
-    slug.length >= 3
-      ? probeUrlExists(`https://www.goodrx.com/${slug}`)
-      : Promise.resolve(false),
-  ]);
-
+  const cpdCatalog = c2 ? [] : await getCostPlusDrugsCatalog();
   const cpdMatch = c2 ? null : matchCostPlusDrugs(cpdCatalog, drug);
 
   // Amazon Pharmacy carries virtually all non-C-II FDA-approved retail Rx drugs
   const amazonTag = process.env.AMAZON_ASSOCIATES_TAG || '';
   const amazonUrl = `https://pharmacy.amazon.com/s?k=${encodeURIComponent(primaryName)}${amazonTag ? `&tag=${encodeURIComponent(amazonTag)}` : ''}`;
-
-  const singleCareParam = process.env.SINGLECARE_PARTNER_PARAM ? `?${process.env.SINGLECARE_PARTNER_PARAM}` : '';
-  const goodRxParam = process.env.GOODRX_PARTNER_PARAM ? `?${process.env.GOODRX_PARTNER_PARAM}` : '';
 
   const evaluated = [
     cpdMatch || {
@@ -221,32 +243,9 @@ async function getVerifiedPartnersForDrug(db, drug) {
       price_hint: null,
       verified: !c2,
     },
-    {
-      id: 'singlecare',
-      label: 'SingleCare Coupon',
-      url: singleCareOk ? `https://www.singlecare.com/prescription/${slug}${singleCareParam}` : null,
-      price_hint: null,
-      verified: singleCareOk,
-    },
-    {
-      id: 'goodrx',
-      label: 'GoodRx Coupon',
-      url: goodRxOk ? `https://www.goodrx.com/${slug}${goodRxParam}` : null,
-      price_hint: null,
-      verified: goodRxOk,
-    },
   ];
 
-  // Fallback for SingleCare using generic slug if brand slug didn't match
-  if (!singleCareOk && genericSlug && genericSlug !== slug && genericSlug.length >= 4) {
-    const genOk = await probeUrlExists(`https://www.singlecare.com/prescription/${genericSlug}`);
-    if (genOk) {
-      evaluated[2].verified = true;
-      evaluated[2].url = `https://www.singlecare.com/prescription/${genericSlug}${singleCareParam}`;
-    }
-  }
-
-  // Persist results in SQLite cache (both verified & unverified so we don't re-probe for 7 days)
+  // Persist Cost Plus Drugs + Amazon results in SQLite cache for 7 days
   const upsert = db.prepare(`
     INSERT INTO partner_links (drug_id, partner_id, label, url, price_hint, verified, checked_at)
     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
@@ -262,7 +261,7 @@ async function getVerifiedPartnersForDrug(db, drug) {
     upsert.run(drug.id, p.id, p.label, p.url, p.price_hint, p.verified ? 1 : 0);
   }
 
-  return evaluated
+  const directPharmacies = evaluated
     .filter(p => p.verified && p.url)
     .map(p => ({
       id: p.id,
@@ -270,6 +269,8 @@ async function getVerifiedPartnersForDrug(db, drug) {
       url: p.url,
       price_hint: p.price_hint,
     }));
+
+  return [...directPharmacies, ...publicCoupons];
 }
 
 // Official Manufacturer Copay & Patient Assistance Programs for high-spend brand medications

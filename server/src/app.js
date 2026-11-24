@@ -29,10 +29,11 @@ function createApp(db, options = {}) {
   const scheduler = options.scheduler || new IngestionScheduler(db);
   const enableRateLimiter = options.enableRateLimiter !== false;
 
-  // 1. Security Headers via Helmet
+  // 1. Security Headers via Helmet (explicit no-referrer so outbound pharmacy links never receive internal URLs)
   app.use(helmet({
     contentSecurityPolicy: false, // Flutter Web uses CanvasKit WASM + inline bootstrap
-    crossOriginEmbedderPolicy: false
+    crossOriginEmbedderPolicy: false,
+    referrerPolicy: { policy: 'no-referrer' }
   }));
 
   // 2. CORS: Explicit allowlist for browser origins; native mobile apps send no Origin
@@ -82,7 +83,9 @@ function createApp(db, options = {}) {
 
   // Aggregate zero-PII daily counters (no IPs, cookies, user IDs, or drug names stored)
   app.use('/api/drugs', (req, res, next) => {
-    if (req.method === 'GET' && typeof req.query.q === 'string' && req.query.q.trim().length > 0) {
+    const hasGetQuery = req.method === 'GET' && typeof req.query.q === 'string' && req.query.q.trim().length > 0;
+    const hasPostQuery = req.method === 'POST' && req.path === '/search' && typeof req.body?.q === 'string' && req.body.q.trim().length > 0;
+    if (hasGetQuery || hasPostQuery) {
       recordDailyMetric(db, 'api_searches');
     }
     next();

@@ -46,19 +46,32 @@ class ApiService {
     }
   }
 
-  /// Search or list available catalog drugs with optional query and pagination
+  /// Search or list available catalog drugs with optional query and pagination.
+  /// Uses POST /api/drugs/search when a search query is present so drug names never appear in HTTP URL logs.
   Future<List<Drug>> getDrugs({String? query, int limit = 50, int offset = 0}) async {
-    final queryParams = <String, String>{
-      'limit': limit.toString(),
-      'offset': offset.toString(),
-      if (query != null && query.isNotEmpty) 'q': query,
-    };
+    final trimmedQuery = query?.trim() ?? '';
+    final http.Response response;
 
-    final uri = Uri.parse('$baseUrl/api/drugs').replace(queryParameters: queryParams);
-    final timeout = (query != null && query.isNotEmpty)
-        ? const Duration(seconds: 18)
-        : const Duration(seconds: 10);
-    final response = await http.get(uri).timeout(timeout);
+    if (trimmedQuery.isNotEmpty) {
+      response = await http
+          .post(
+            Uri.parse('$baseUrl/api/drugs/search'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'q': trimmedQuery,
+              'limit': limit,
+              'offset': offset,
+            }),
+          )
+          .timeout(const Duration(seconds: 18));
+    } else {
+      final queryParams = <String, String>{
+        'limit': limit.toString(),
+        'offset': offset.toString(),
+      };
+      final uri = Uri.parse('$baseUrl/api/drugs').replace(queryParameters: queryParams);
+      response = await http.get(uri).timeout(const Duration(seconds: 10));
+    }
 
     if (response.statusCode != 200) {
       throw Exception('Failed to fetch drugs catalog: ${response.statusCode}');
@@ -124,11 +137,16 @@ class ApiService {
     };
   }
 
-  /// Fetch verified cash & discount pharmacy links, optional PBM discount card, and brand assistance
+  /// Fetch verified cash & discount pharmacy links, optional PBM discount card, and brand assistance.
+  /// Uses POST /api/drugs/partners so RxCUIs never appear in HTTP URL access logs.
   Future<Map<String, dynamic>> getSavingsOptions(String rxcui) async {
     try {
       final response = await http
-          .get(Uri.parse('$baseUrl/api/drugs/$rxcui/partners'))
+          .post(
+            Uri.parse('$baseUrl/api/drugs/partners'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'rxcui': rxcui}),
+          )
           .timeout(const Duration(seconds: 12));
       if (response.statusCode != 200) {
         return const {'partners': [], 'discount_card': null, 'brand_assistance': null};

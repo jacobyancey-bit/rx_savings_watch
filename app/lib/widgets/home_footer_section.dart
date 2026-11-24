@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/link.dart';
 import '../config/partner_links.dart';
+import '../services/external_nav_service.dart';
 import 'legal_policy_sheet.dart';
 import 'privacy_promise_sheet.dart';
 import 'review_sheet.dart';
@@ -357,13 +358,12 @@ class HomeFooterSection extends StatelessWidget {
                 () => LegalPolicySheet.showTermsOfService(context),
               ),
               Text('•', style: TextStyle(color: muted, fontSize: 12)),
-              Link(
-                uri: Uri.parse('https://rx.dangling-dice-studios.com/partners'),
-                target: LinkTarget.self,
-                builder: (context, followLink) => _footerLink(
-                  context,
-                  'For Pharmacies & Clinics',
-                  () => followLink?.call(),
+              _footerLink(
+                context,
+                'For Pharmacies & Clinics',
+                () => ExternalNavService.openUrl(
+                  'https://rx.dangling-dice-studios.com/partners',
+                  sameTab: true,
                 ),
               ),
             ],

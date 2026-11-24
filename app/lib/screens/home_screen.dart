@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/link.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/cabinet_transfer_service.dart';
 import '../services/web_push_service.dart';
@@ -504,6 +505,68 @@ class _HomeScreenState extends State<HomeScreen> {
                               icon: const Text('Aa', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 12),
+                        // Subtle B2B Partnership CTA card for visiting pharmacies & clinics
+                        Link(
+                          uri: Uri.parse('https://rx.dangling-dice-studios.com/partners'),
+                          target: LinkTarget.blank,
+                          builder: (context, followLink) => Material(
+                            color: isDark
+                                ? Colors.teal.withValues(alpha: 0.14)
+                                : Colors.teal.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            child: InkWell(
+                              onTap: followLink,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isDark ? Colors.teal.shade700 : Colors.teal.shade200,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.storefront_outlined,
+                                      size: 18,
+                                      color: isDark ? Colors.teal.shade200 : Colors.teal.shade800,
+                                    ),
+                                    const SizedBox(width: 9),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Pharmacies & Clinics',
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: isDark ? Colors.teal.shade100 : Colors.teal.shade900,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Partner with us • 60-day pilot',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: theme.colorScheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(
+                                      Icons.open_in_new,
+                                      size: 14,
+                                      color: isDark ? Colors.teal.shade200 : Colors.teal.shade700,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),

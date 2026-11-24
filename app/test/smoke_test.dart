@@ -351,13 +351,15 @@ void main() {
 
       expect(find.text('1 Due'), findsOneWidget);
       expect(find.textContaining('Refill in 3d'), findsAtLeastNWidgets(1));
-      expect(find.text('Mark Refilled'), findsOneWidget);
+      expect(find.text('Compare Prices'), findsOneWidget);
+      expect(find.text('Mark Refilled'), findsAtLeastNWidgets(1));
 
-      // 4. Tap Mark Refilled -> resets to 30d, All Stocked, and shows 0 left renewal tag
-      await tester.tap(find.text('Mark Refilled'));
+      // 4. Tap Mark Refilled -> resets to 30d, All Stocked, clears Refill-Due banner, and shows 0 left renewal tag
+      await tester.tap(find.text('Mark Refilled').first);
       await tester.pumpAndSettle();
 
       expect(find.text('All Stocked'), findsOneWidget);
+      expect(find.text('Compare Prices'), findsNothing);
       expect(find.textContaining('Refill in 30d'), findsOneWidget);
       expect(find.textContaining('0 left'), findsOneWidget);
 

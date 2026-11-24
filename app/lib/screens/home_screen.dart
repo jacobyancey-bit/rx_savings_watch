@@ -27,6 +27,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _checkedIncomingTransfer = false;
   int _desktopNavIndex = 0; // 0 = Cabinet, 1 = Search Catalog, 2 = Settings
+  String? _pendingSearchQuery;
 
   @override
   void initState() {
@@ -280,7 +281,11 @@ class _HomeScreenState extends State<HomeScreen> {
     Widget activePane;
     switch (_desktopNavIndex) {
       case 1:
-        activePane = const SearchScreen(embedded: true);
+        activePane = SearchScreen(
+          key: ValueKey('search_${_pendingSearchQuery ?? ''}'),
+          embedded: true,
+          initialQuery: _pendingSearchQuery,
+        );
         break;
       case 2:
         activePane = const SettingsScreen(embedded: true);
@@ -644,6 +649,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
+                  // Refill-Due → Compare Prices Action Banner (high-intent point-of-fill CTA)
+                  if (cabinet.refillsDueCount > 0 && cabinet.nextRefillDue != null)
+                    SliverToBoxAdapter(
+                      child: _buildRefillDueBanner(context, cabinet, theme, isDesktop: isDesktop),
+                    ),
+
                   // Empty State or Prescription + OTC/Supplement Lists
                   if (cabinet.cabinet.isEmpty && cabinet.supplements.isEmpty)
                     SliverToBoxAdapter(
@@ -651,49 +662,86 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                   else ...[
                     if (cabinet.cabinet.isNotEmpty)
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final drug = cabinet.cabinet[index];
-                            return DrugCard(
-                              drug: drug,
-                              reminder: cabinet.reminderFor(drug.rxcui),
-                              onReminderTap: () => ReminderSheet.show(context, drug),
-                              onToggleTaken: () => cabinet.toggleTakenToday(drug.rxcui),
-                              refill: cabinet.refillFor(drug.rxcui),
-                              onRefillTap: () => RefillSetupSheet.show(context, drug),
-                              onMarkRefilled: () async {
-                                await cabinet.markRefilledToday(drug.rxcui);
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('${drug.displayName} marked refilled today'),
-                                      duration: const Duration(seconds: 2),
-                                    ),
-                                  );
-                                }
-                              },
-                              onTap: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => DrugDetailScreen(drug: drug),
-                                  ),
-                                );
-                              },
-                              onRemove: () {
-                                cabinet.removeDrug(drug.rxcui);
+                      ...() {
+                        final useTwoColumns = isDesktop && MediaQuery.sizeOf(context).width >= 1100;
+
+                        Widget buildCard(int index) {
+                          final drug = cabinet.cabinet[index];
+                          return DrugCard(
+                            drug: drug,
+                            reminder: cabinet.reminderFor(drug.rxcui),
+                            onReminderTap: () => ReminderSheet.show(context, drug),
+                            onToggleTaken: () => cabinet.toggleTakenToday(drug.rxcui),
+                            refill: cabinet.refillFor(drug.rxcui),
+                            onRefillTap: () => RefillSetupSheet.show(context, drug),
+                            onMarkRefilled: () async {
+                              await cabinet.markRefilledToday(drug.rxcui);
+                              if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Removed ${drug.displayName}'),
+                                    content: Text('${drug.displayName} marked refilled today'),
                                     duration: const Duration(seconds: 2),
                                   ),
                                 );
-                              },
-                            );
-                          },
-                          childCount: cabinet.cabinet.length,
-                        ),
-                      ),
+                              }
+                            },
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => DrugDetailScreen(drug: drug),
+                                ),
+                              );
+                            },
+                            onRemove: () {
+                              cabinet.removeDrug(drug.rxcui);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Removed ${drug.displayName}'),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                          );
+                        }
+
+                        if (!useTwoColumns) {
+                          return <Widget>[
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) => buildCard(index),
+                                childCount: cabinet.cabinet.length,
+                              ),
+                            ),
+                          ];
+                        }
+
+                        final rowCount = (cabinet.cabinet.length / 2).ceil();
+                        return <Widget>[
+                          SliverPadding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            sliver: SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, rowIndex) {
+                                  final leftIdx = rowIndex * 2;
+                                  final rightIdx = leftIdx + 1;
+                                  return Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(child: buildCard(leftIdx)),
+                                      Expanded(
+                                        child: rightIdx < cabinet.cabinet.length
+                                            ? buildCard(rightIdx)
+                                            : const SizedBox.shrink(),
+                                      ),
+                                    ],
+                                  );
+                                },
+                                childCount: rowCount,
+                              ),
+                            ),
+                          ),
+                        ];
+                      }(),
 
                     // Clean, separated OTC & Supplements section (hidden until used)
                     if (cabinet.supplements.isNotEmpty) ...[
@@ -1117,7 +1165,121 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildRefillDueBanner(
+    BuildContext context,
+    CabinetProvider cabinet,
+    ThemeData theme, {
+    required bool isDesktop,
+  }) {
+    final next = cabinet.nextRefillDue!;
+    final isDark = theme.brightness == Brightness.dark;
+    final matchingDrug = cabinet.cabinet.where((d) => d.rxcui == next.rxcui).toList();
+    final extraCount = cabinet.refillsDueCount - 1;
+    final extraText = extraCount > 0 ? ' (+$extraCount more due)' : '';
+
+    return Container(
+      margin: EdgeInsets.fromLTRB(isDesktop ? 24 : 16, 4, isDesktop ? 24 : 16, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.amber.withValues(alpha: 0.16) : Colors.amber.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? Colors.amber.shade400.withValues(alpha: 0.5) : Colors.amber.shade400,
+        ),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 10,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.schedule_rounded,
+                color: isDark ? Colors.amber.shade300 : Colors.amber.shade900,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${next.drugName} — ${next.statusLabel()}$extraText',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: isDark ? Colors.amber.shade100 : Colors.amber.shade900,
+                      ),
+                    ),
+                    Text(
+                      next.needsDoctorRenewal
+                          ? '0 refills remaining — contact your prescriber to renew'
+                          : 'Compare local cash prices & free coupons before filling',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (matchingDrug.isNotEmpty)
+                FilledButton.tonalIcon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => DrugDetailScreen(drug: matchingDrug.first),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.local_offer_outlined, size: 16),
+                  label: const Text('Compare Prices'),
+                ),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await cabinet.markRefilledToday(next.rxcui);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('${next.drugName} marked refilled today'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('Mark Refilled'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmptyState(BuildContext context) {
+    void openSearch([String? preset]) {
+      if (MediaQuery.sizeOf(context).width >= 960) {
+        setState(() {
+          _pendingSearchQuery = preset;
+          _desktopNavIndex = 1;
+        });
+      } else {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => SearchScreen(initialQuery: preset)),
+        );
+      }
+    }
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -1132,23 +1294,34 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Add your prescriptions to watch for commercial generic launches, acquisition savings, and supply shortages.',
+              'Add your prescriptions to watch for FDA-approved generics, compare cash & coupon prices, and track refills.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
-              onPressed: () {
-                if (MediaQuery.sizeOf(context).width >= 960) {
-                  setState(() => _desktopNavIndex = 1);
-                } else {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SearchScreen()),
-                  );
-                }
-              },
+              onPressed: () => openSearch(),
               icon: const Icon(Icons.add),
               label: const Text('Add Your First Medication'),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Or try a popular prescription:',
+              style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                for (final sample in const ['Lipitor', 'Eliquis', 'Metformin', 'Ozempic'])
+                  ActionChip(
+                    avatar: const Icon(Icons.search, size: 16),
+                    label: Text(sample),
+                    onPressed: () => openSearch(sample),
+                  ),
+              ],
             ),
           ],
         ),

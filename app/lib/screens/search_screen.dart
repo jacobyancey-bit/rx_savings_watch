@@ -10,8 +10,9 @@ import 'drug_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   final bool embedded;
+  final String? initialQuery;
 
-  const SearchScreen({super.key, this.embedded = false});
+  const SearchScreen({super.key, this.embedded = false, this.initialQuery});
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -31,6 +32,9 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialQuery != null && widget.initialQuery!.trim().isNotEmpty) {
+      _controller.text = widget.initialQuery!.trim();
+    }
     _fetchCatalog();
   }
 
@@ -57,6 +61,9 @@ class _SearchScreenState extends State<SearchScreen> {
         _filteredDrugs = drugs;
         _isLoading = false;
       });
+      if (_controller.text.trim().isNotEmpty) {
+        _onSearchChanged(_controller.text);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {

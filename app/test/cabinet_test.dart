@@ -17,6 +17,15 @@ class MockStorageService extends StorageService {
   bool allowLaunch = true;
   bool allowShortage = true;
   double storedTextScale = 1.0;
+  String? storedLocalZip;
+
+  @override
+  Future<String?> getLocalZipCode() async => storedLocalZip;
+
+  @override
+  Future<void> saveLocalZipCode(String? zip) async {
+    storedLocalZip = zip;
+  }
 
   @override
   Future<List<Drug>> loadCabinet() async => List.from(storedCabinet);

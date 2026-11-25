@@ -177,6 +177,19 @@ class ApiService {
     }
   }
 
+  /// Zero-PII aggregate B2B click counter (partner_id + event_type ONLY).
+  Future<void> recordB2bEvent(int partnerId, String eventType) async {
+    try {
+      await http
+          .post(
+            Uri.parse('$baseUrl/api/b2b/event'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'partner_id': partnerId, 'event_type': eventType}),
+          )
+          .timeout(const Duration(seconds: 4));
+    } catch (_) {}
+  }
+
   /// Submit a strictly anonymous, zero-PII data quality flag (enum only, no free text)
   Future<bool> submitDataQualityFlag({
     required String rxcui,

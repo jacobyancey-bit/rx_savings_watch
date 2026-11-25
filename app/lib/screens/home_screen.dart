@@ -40,6 +40,15 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_checkedIncomingTransfer || !kIsWeb || !mounted) return;
     _checkedIncomingTransfer = true;
 
+    // Pre-fill local ZIP code when opened from a pharmacy counter QR flyer (?zip=XXXXX).
+    final rawZip = Uri.base.queryParameters['zip'];
+    if (rawZip != null && rawZip.isNotEmpty) {
+      final cleanZip = rawZip.replaceAll(RegExp(r'\D'), '');
+      if (cleanZip.length == 5) {
+        await context.read<CabinetProvider>().setLocalZipCode(cleanZip);
+      }
+    }
+
     final capturedHash = WebPushService.consumePendingImportHash();
     final fragment = capturedHash.isNotEmpty ? capturedHash : Uri.base.fragment;
     if (fragment.isEmpty || !fragment.toLowerCase().contains('import=')) return;

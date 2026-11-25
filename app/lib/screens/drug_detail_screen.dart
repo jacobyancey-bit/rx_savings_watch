@@ -1160,15 +1160,69 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                         ),
                       ],
                     ),
+                    if (lp['cash_price_note'] != null && lp['cash_price_note'].toString().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: theme.brightness == Brightness.dark
+                              ? Colors.teal.withValues(alpha: 0.2)
+                              : Colors.teal.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: theme.brightness == Brightness.dark
+                                ? Colors.teal.shade600
+                                : Colors.teal.shade200,
+                          ),
+                        ),
+                        child: Text(
+                          lp['cash_price_note'].toString(),
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: theme.brightness == Brightness.dark
+                                ? Colors.teal.shade100
+                                : Colors.teal.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
                     if (lp['tagline'] != null && lp['tagline'].toString().isNotEmpty) ...[
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(
                         lp['tagline'].toString(),
                         style: TextStyle(fontSize: 12.5, color: theme.colorScheme.onSurface),
                       ),
                     ],
+                    if (lp['services'] is List && (lp['services'] as List).isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final svc in (lp['services'] as List))
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surface,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: theme.colorScheme.outlineVariant),
+                              ),
+                              child: Text(
+                                svc.toString(),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
                     if (lp['address'] != null && lp['address'].toString().isNotEmpty) ...[
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 6),
                       Text(
                         lp['address'].toString(),
                         style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
@@ -1185,6 +1239,12 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                             label: 'Call ${lp['phone']}',
                             icon: Icons.phone_outlined,
                             uri: Uri.parse('tel:${lp['phone'].toString().replaceAll(RegExp(r'[^0-9+]'), '')}'),
+                            onBeforeFollow: () {
+                              final pid = (lp['id'] as num?)?.toInt();
+                              if (pid != null) {
+                                ApiService(baseUrl: cabinet.serverUrl).recordB2bEvent(pid, 'call');
+                              }
+                            },
                           ),
                         if (lp['transfer_url'] != null && lp['transfer_url'].toString().isNotEmpty)
                           _buildPartnerButton(
@@ -1192,6 +1252,12 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                             label: 'Transfer Rx',
                             icon: Icons.swap_horiz_rounded,
                             uri: Uri.parse(lp['transfer_url'].toString()),
+                            onBeforeFollow: () {
+                              final pid = (lp['id'] as num?)?.toInt();
+                              if (pid != null) {
+                                ApiService(baseUrl: cabinet.serverUrl).recordB2bEvent(pid, 'transfer');
+                              }
+                            },
                           ),
                         if (lp['website_url'] != null && lp['website_url'].toString().isNotEmpty)
                           _buildPartnerButton(
@@ -1199,6 +1265,12 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                             label: 'Visit Website',
                             icon: Icons.open_in_new,
                             uri: Uri.parse(lp['website_url'].toString()),
+                            onBeforeFollow: () {
+                              final pid = (lp['id'] as num?)?.toInt();
+                              if (pid != null) {
+                                ApiService(baseUrl: cabinet.serverUrl).recordB2bEvent(pid, 'website');
+                              }
+                            },
                           ),
                       ],
                     ),
@@ -1585,12 +1657,16 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     required String label,
     required IconData icon,
     required Uri uri,
+    VoidCallback? onBeforeFollow,
   }) {
     return Link(
       uri: uri,
       target: LinkTarget.blank,
       builder: (context, followLink) => OutlinedButton.icon(
-        onPressed: followLink,
+        onPressed: () {
+          onBeforeFollow?.call();
+          followLink?.call();
+        },
         icon: Icon(icon, size: 18),
         label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         style: OutlinedButton.styleFrom(

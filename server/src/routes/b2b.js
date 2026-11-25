@@ -6,9 +6,29 @@ const SITE_ORIGIN = 'https://rx.dangling-dice-studios.com';
 const ALLOWED_TYPES = new Set(['pharmacy', 'clinic', 'senior_care']);
 const ALLOWED_PLANS = new Set(['pilot_60d', 'local_149', 'multi_349']);
 const ALLOWED_STATUSES = new Set(['pending', 'active', 'paused']);
+const ALLOWED_EVENTS = new Set(['call', 'transfer', 'website']);
+const SERVICE_LABELS = {
+  free_delivery: 'Free Local Delivery',
+  compounding: 'Compounding',
+  med_sync: 'Med-Sync / Auto-Refill',
+  blister_packs: 'Blister Packs',
+  drive_thru: 'Drive-Thru',
+  bilingual: 'Bilingual Staff',
+  vaccines: 'Walk-In Vaccines',
+};
 const APPLY_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const APPLY_MAX_PER_IP = 8;
 const STRIPE_WEBHOOK_TOLERANCE_SEC = 300; // 5 minutes
+const MAX_ACTIVE_PARTNERS_PER_ZIP = 2;
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function cleanText(raw, maxLen = 160) {
   return String(raw || '')
@@ -35,6 +55,16 @@ function normalizeZipList(raw, maxZips = 25) {
   return Array.from(new Set(matches)).slice(0, maxZips);
 }
 
+function normalizeServices(raw) {
+  const items = Array.isArray(raw)
+    ? raw
+    : String(raw || '').split(',');
+  const clean = items
+    .map(s => String(s || '').trim().toLowerCase())
+    .filter(s => Object.prototype.hasOwnProperty.call(SERVICE_LABELS, s));
+  return Array.from(new Set(clean));
+}
+
 function normalizeNpi(raw) {
   const digits = String(raw || '').replace(/[^0-9]/g, '');
   return digits.length === 10 ? digits : null;
@@ -50,10 +80,6 @@ function isValidAdminKey(req) {
   return crypto.timingSafeEqual(a, b);
 }
 
-/**
- * Verifies a 10-digit NPI against the free public CMS NPPES NPI Registry API.
- * Returns true if the NPI exists and is active. Skipped during automated offline tests.
- */
 async function verifyNpiWithCms(npi) {
   if (!npi || npi.length !== 10 || process.env.NODE_ENV === 'test') {
     return false;
@@ -78,9 +104,6 @@ function getStripePriceId(planTier) {
   return null;
 }
 
-/**
- * Creates a hosted Stripe Checkout Session for recurring B2B subscriptions via official Stripe REST API.
- */
 async function createStripeCheckoutSession({ partnerId, planTier, contactEmail, businessName }) {
   const secretKey = (process.env.STRIPE_SECRET_KEY || '').trim();
   const priceId = getStripePriceId(planTier);
@@ -116,9 +139,6 @@ async function createStripeCheckoutSession({ partnerId, planTier, contactEmail, 
   }
 }
 
-/**
- * Verifies Stripe-Signature header (`t=<ts>,v1=<hex>`) against raw request body using HMAC-SHA256.
- */
 function verifyStripeWebhookSignature(rawBody, signatureHeader, webhookSecret) {
   if (!rawBody || !signatureHeader || !webhookSecret) return false;
   const parts = String(signatureHeader).split(',');
@@ -149,7 +169,73 @@ function verifyStripeWebhookSignature(rawBody, signatureHeader, webhookSecret) {
   return false;
 }
 
+function renderFlyerHtml(partner) {
+  const firstZip = String(partner.zip_codes || '').split(',').filter(Boolean)[0] || '';
+  const targetUrl = firstZip ? `${SITE_ORIGIN}/?zip=${encodeURIComponent(firstZip)}` : `${SITE_ORIGIN}/`;
+  const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(targetUrl)}`;
+  const badges = normalizeServices(partner.services).map(k => `<span class="badge">${escapeHtml(SERVICE_LABELS[k])}</span>`).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Counter Flyer — ${escapeHtml(partner.business_name)} × Rx Savings Watch</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f2f5f5; color: #122120; }
+    .toolbar { text-align: center; padding: 14px; background: #fff; border-bottom: 1px solid #d9e4e3; }
+    .print-btn { background: #057873; color: #fff; border: 0; padding: 10px 18px; border-radius: 10px; font-weight: 700; font-size: 14px; cursor: pointer; }
+    .sheet { max-width: 640px; margin: 28px auto; background: #fff; border: 2px solid #057873; border-radius: 20px; padding: 36px 32px; text-align: center; }
+    .eyebrow { display: inline-block; background: #e3f5ec; color: #057873; padding: 5px 14px; border-radius: 999px; font-size: 12px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; }
+    h1 { margin: 14px 0 8px; font-size: 28px; line-height: 1.2; }
+    .sub { color: #4f6362; font-size: 15px; margin: 0 auto 22px; max-width: 480px; }
+    .qr-box { display: inline-block; padding: 14px; border: 1px solid #d9e4e3; border-radius: 16px; background: #fff; margin-bottom: 18px; }
+    .cash { background: #eef8f7; border: 1px solid #b5dcd9; color: #045955; border-radius: 12px; padding: 12px 16px; font-weight: 700; margin: 12px auto 16px; max-width: 460px; }
+    .badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 18px; }
+    .badge { background: #f1f5f9; border: 1px solid #cbd5e1; color: #1e293b; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .contact { font-size: 14px; color: #334847; margin-top: 8px; }
+    .foot { font-size: 11.5px; color: #64748b; margin-top: 22px; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+    @media print {
+      body { background: #fff; }
+      .toolbar { display: none; }
+      .sheet { margin: 0 auto; border-width: 2px; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="print-btn" onclick="window.print()">Print Counter Flyer / Bag Stuffer</button>
+  </div>
+  <div class="sheet">
+    <span class="eyebrow">Free Refill Reminders &amp; Generic Savings</span>
+    <h1>Recommended by ${escapeHtml(partner.business_name)}</h1>
+    <p class="sub">Scan the QR code to get free prescription refill countdowns, daily dose reminders, and FDA generic availability alerts—100% private with zero login.</p>
+    <div class="qr-box">
+      <img src="${qrImgUrl}" width="210" height="210" alt="Scan to open Rx Savings Watch">
+    </div>
+    ${partner.cash_price_note ? `<div class="cash">${escapeHtml(partner.cash_price_note)}</div>` : ''}
+    ${badges ? `<div class="badges">${badges}</div>` : ''}
+    <div class="contact">
+      ${partner.phone ? `<strong>Call Us:</strong> ${escapeHtml(partner.phone)}` : ''}
+      ${partner.address ? `<br>${escapeHtml(partner.address)}` : ''}
+    </div>
+    <div class="foot">
+      Powered by Rx Savings Watch (rx.dangling-dice-studios.com) • Zero accounts, zero tracking, zero PHI collected.<br>
+      Informational only — not insurance or medical advice.
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
 function renderPartnersPageHtml() {
+  const serviceCheckboxes = Object.entries(SERVICE_LABELS).map(([key, label]) => `
+    <label class="check-pill">
+      <input type="checkbox" name="services" value="${key}">
+      <span>${escapeHtml(label)}</span>
+    </label>
+  `).join('');
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -157,7 +243,7 @@ function renderPartnersPageHtml() {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="no-referrer">
   <title>For Independent Pharmacies &amp; Clinics — Rx Savings Watch B2B Partner Program</title>
-  <meta name="description" content="Reach local cash-pay patients right when they refill. Flat-rate ZIP sponsorship for independent pharmacies, Direct Primary Care clinics, and senior care — zero EHR integration or HIPAA friction.">
+  <meta name="description" content="Reach local cash-pay patients right when they refill. Flat-rate ZIP sponsorship (capped at 2 exclusive pharmacies per ZIP) with public cash pricing, service badges, counter QR flyers, and zero-PHI monthly ROI reports.">
   <link rel="canonical" href="${SITE_ORIGIN}/partners">
   <meta name="theme-color" content="#057873">
   <style>
@@ -175,7 +261,7 @@ function renderPartnersPageHtml() {
     main { max-width: 1080px; margin: 0 auto; padding: 32px 20px 64px; }
     .hero { background: linear-gradient(135deg, #057873, #034e4a); color: #fff; border-radius: 20px; padding: 36px 28px; margin-bottom: 24px; }
     .hero h1 { margin: 8px 0 10px; font-size: 32px; line-height: 1.2; }
-    .hero p { margin: 0 0 20px; color: #d8f2f0; max-width: 720px; font-size: 16px; }
+    .hero p { margin: 0 0 20px; color: #d8f2f0; max-width: 740px; font-size: 16px; }
     .pill { display: inline-block; background: rgba(255,255,255,0.16); padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: 0.4px; }
     .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-bottom: 24px; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; }
@@ -187,6 +273,9 @@ function renderPartnersPageHtml() {
     label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
     input, select { width: 100%; padding: 10px 12px; border: 1px solid #c5d4d3; border-radius: 10px; font-size: 14px; font-family: inherit; background: #fff; }
     input:focus, select:focus { outline: 2px solid var(--teal); border-color: var(--teal); }
+    .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .check-pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid #c5d4d3; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer; background: #fff; margin: 0; }
+    .check-pill input { width: auto; margin: 0; }
     .status-box { margin-top: 14px; padding: 12px 14px; border-radius: 10px; font-size: 14px; display: none; }
     .status-ok { background: #e3f5ec; color: #0f6b43; border: 1px solid #9ad6b8; }
     .status-err { background: #fdecec; color: #9c1c1c; border: 1px solid #f2b4b4; }
@@ -212,10 +301,10 @@ function renderPartnersPageHtml() {
     <div id="checkoutBanner" class="banner"></div>
 
     <section class="hero">
-      <span class="pill">B2B PARTNER PROGRAM • ZERO EHR OR HIPAA FRICTION</span>
-      <h1>Reach Local Cash-Pay Patients Right When They Refill</h1>
-      <p>Rx Savings Watch helps patients and caregivers track prescriptions, refill dates, and generic savings—100% free and private. Independent pharmacies, Direct Primary Care (DPC) clinics, and senior care facilities can sponsor local ZIP codes with transparent flat monthly pricing.</p>
-      <a class="btn" style="background:#fff;color:#035a56 !important;" href="#apply">Choose a Plan &amp; Apply</a>
+      <span class="pill">LIMITED TO 2 EXCLUSIVE PARTNERS PER ZIP • ZERO HIPAA FRICTION</span>
+      <h1>Win Back Local Cash-Pay Refills Without Big-Chain Software Costs</h1>
+      <p>Showcase your public cash-price menu, highlight services chains can't match (free delivery, compounding, blister packs), hand customers a co-branded QR refill flyer, and receive monthly zero-PHI click &amp; impression reports.</p>
+      <a class="btn" style="background:#fff;color:#035a56 !important;" href="#apply">Claim Your ZIP Codes</a>
     </section>
 
     <section class="grid-3">
@@ -225,8 +314,8 @@ function renderPartnersPageHtml() {
         <p class="muted">For our first 5 independent pharmacy or DPC clinic partners.</p>
         <ul>
           <li>Featured <em>Sponsored Local Partner</em> card in up to 5 ZIP codes</li>
-          <li>1-tap Call Pharmacy, Transfer Rx, and Website buttons</li>
-          <li>Zero setup fee — cancel anytime</li>
+          <li>Public cash-price highlight + service badges (delivery, compounding, etc.)</li>
+          <li>Printable co-branded Counter QR Flyer + monthly ROI counters</li>
         </ul>
         <button type="button" class="btn-outline" onclick="selectPlan('pilot_60d')">Start 60-Day Free Pilot</button>
       </div>
@@ -234,11 +323,11 @@ function renderPartnersPageHtml() {
       <div class="card" style="border-color:#057873;border-width:2px;">
         <strong>Local Independent Pharmacy</strong>
         <div class="price">$149 <span class="muted" style="font-size:14px;font-weight:500;">/ month</span></div>
-        <p class="muted">Flat-rate local sponsorship — never per-prescription kickbacks.</p>
+        <p class="muted">Flat-rate ZIP sponsorship (max 2 partners per ZIP) — never per-Rx kickbacks.</p>
         <ul>
           <li>Featured across up to 5 local 5-digit ZIP codes</li>
-          <li>Shown when local users compare cash prices or refill</li>
-          <li>Instant Stripe subscription billing &amp; receipts</li>
+          <li>Public cash-price menu + service badges + 1-tap Call / Transfer Rx</li>
+          <li>Printable Counter QR Flyer + monthly aggregate ROI report</li>
         </ul>
         <button type="button" class="btn" onclick="selectPlan('local_149')">Subscribe — $149/mo</button>
       </div>
@@ -249,7 +338,7 @@ function renderPartnersPageHtml() {
         <p class="muted">For regional independent chains, DPC groups, or senior communities.</p>
         <ul>
           <li>Up to 25 covered 5-digit ZIP codes</li>
-          <li>Priority onboarding &amp; quarterly placement report</li>
+          <li>Everything in Local Pharmacy + custom counter flyers per location</li>
           <li>Zero patient PHI ever shared or stored</li>
         </ul>
         <button type="button" class="btn-outline" onclick="selectPlan('multi_349')">Subscribe — $349/mo</button>
@@ -258,7 +347,7 @@ function renderPartnersPageHtml() {
 
     <section class="card" id="apply" style="display:block;">
       <h2 style="margin-top:0;">Partner Onboarding &amp; Checkout</h2>
-      <p class="muted" style="margin-bottom:18px;">Complete your business details below. Paid plans proceed directly to secure Stripe Checkout (when enabled), and pharmacies with a verified 10-digit NPI activate automatically upon payment.</p>
+      <p class="muted" style="margin-bottom:18px;">Complete your public pharmacy details below. Paid plans proceed directly to secure Stripe Checkout, and pharmacies with a verified 10-digit NPI activate automatically upon payment.</p>
 
       <form id="partnerForm">
         <div class="form-grid">
@@ -287,7 +376,7 @@ function renderPartnersPageHtml() {
             <input id="phone" name="phone" required maxlength="40" placeholder="(555) 234-5678">
           </div>
           <div>
-            <label for="npi_number">10-Digit NPI Number (Optional — speeds up verification)</label>
+            <label for="npi_number">10-Digit NPI Number (Optional — instant verification)</label>
             <input id="npi_number" name="npi_number" maxlength="10" placeholder="1234567890">
           </div>
           <div>
@@ -314,14 +403,22 @@ function renderPartnersPageHtml() {
               <option value="multi_349">Multi-Location / Senior Care ($349/month — up to 25 ZIPs)</option>
             </select>
           </div>
+          <div>
+            <label for="cash_price_note">Public Cash-Price Highlight (Optional)</label>
+            <input id="cash_price_note" name="cash_price_note" maxlength="120" placeholder="Most 30-day generics $10 cash • Cost + $8 fee">
+          </div>
         </div>
         <div style="margin-top:14px;">
           <label for="tagline">Short Patient Tagline (shown on your card)</label>
-          <input id="tagline" name="tagline" maxlength="140" placeholder="Transparent cash prices &amp; free same-day local delivery">
+          <input id="tagline" name="tagline" maxlength="140" placeholder="Friendly independent pharmacists &amp; transparent cash fills">
+        </div>
+        <div style="margin-top:14px;">
+          <label>Public Pharmacy Services (Select all that apply)</label>
+          <div class="checks">${serviceCheckboxes}</div>
         </div>
         <div style="margin-top:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-          <button class="btn" type="submit" id="submitBtn">Continue</button>
-          <span class="muted" style="font-size:12.5px;">Flat-rate sponsorship only • Clearly labeled "Sponsored Local Partner" • Zero patient PHI shared</span>
+          <button class="btn" type="submit" id="submitBtn">Submit 60-Day Free Pilot Application</button>
+          <span class="muted" style="font-size:12.5px;">Flat-rate sponsorship only • Max 2 pharmacies per ZIP • Zero patient PHI shared</span>
         </div>
         <div id="statusBox" class="status-box"></div>
       </form>
@@ -366,7 +463,6 @@ function renderPartnersPageHtml() {
       updateSubmitLabel(planSelect.value);
     }
 
-    // Show Stripe Checkout return status if present
     (function () {
       const params = new URLSearchParams(window.location.search);
       const checkout = params.get('checkout');
@@ -389,7 +485,9 @@ function renderPartnersPageHtml() {
       e.preventDefault();
       submitBtn.disabled = true;
       statusBox.style.display = 'none';
-      const payload = Object.fromEntries(new FormData(form).entries());
+      const fd = new FormData(form);
+      const payload = Object.fromEntries(fd.entries());
+      payload.services = fd.getAll('services');
       try {
         const res = await fetch('/api/b2b/apply', {
           method: 'POST',
@@ -406,6 +504,7 @@ function renderPartnersPageHtml() {
           statusBox.textContent = data.message || 'Application received! We will review and follow up within 1-2 business days.';
           statusBox.style.display = 'block';
           form.reset();
+          updateSubmitLabel('pilot_60d');
         } else {
           statusBox.className = 'status-box status-err';
           statusBox.textContent = data.message || 'Please check your details and try again.';
@@ -424,17 +523,6 @@ function renderPartnersPageHtml() {
 </html>`;
 }
 
-/**
- * End-to-End B2B Independent Pharmacy & Clinic Partner Router
- * - GET  /partners                                (Standalone B2B landing page & pricing/signup form)
- * - POST /api/b2b/apply                           (Submit application + optional Stripe Checkout redirect)
- * - POST /api/b2b/stripe-webhook                  (Signed Stripe webhook for automated billing lifecycle)
- * - POST /api/b2b/local                           (Zero-PII lookup by 5-digit ZIP only)
- * - GET  /api/admin/b2b/partners                  (Admin-only list of applications & active partners)
- * - POST /api/admin/b2b/partners/:id/status       (Admin-only approve/pause)
- * - POST /api/admin/b2b/partners/:id/billing-portal (Admin-only Stripe Customer Portal link generator)
- * @param {import('node:sqlite').DatabaseSync} db
- */
 function createB2bRouter(db) {
   const router = express.Router();
   const ipBuckets = new Map();
@@ -459,15 +547,16 @@ function createB2bRouter(db) {
   const insertPartnerStmt = db.prepare(`
     INSERT INTO b2b_partners (
       business_name, business_type, contact_name, contact_email,
-      phone, address, website_url, transfer_url, tagline, zip_codes,
-      plan_tier, npi_number, npi_verified, payment_status, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      phone, address, website_url, transfer_url, tagline, services, cash_price_note,
+      zip_codes, plan_tier, npi_number, npi_verified, payment_status, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
   `);
 
   const getPartnerByIdStmt = db.prepare('SELECT * FROM b2b_partners WHERE id = ?');
 
   const listActivePartnersStmt = db.prepare(`
-    SELECT id, business_name, business_type, phone, address, website_url, transfer_url, tagline, zip_codes
+    SELECT id, business_name, business_type, phone, address, website_url, transfer_url,
+           tagline, services, cash_price_note, zip_codes
     FROM b2b_partners
     WHERE status = 'active'
     ORDER BY id ASC
@@ -501,9 +590,27 @@ function createB2bRouter(db) {
     WHERE stripe_subscription_id = ?
   `);
 
+  const incImpressionStmt = db.prepare('UPDATE b2b_partners SET impressions_count = impressions_count + 1 WHERE id = ?');
+  const incCallStmt = db.prepare("UPDATE b2b_partners SET call_clicks = call_clicks + 1 WHERE id = ? AND status = 'active'");
+  const incTransferStmt = db.prepare("UPDATE b2b_partners SET transfer_clicks = transfer_clicks + 1 WHERE id = ? AND status = 'active'");
+  const incWebsiteStmt = db.prepare("UPDATE b2b_partners SET website_clicks = website_clicks + 1 WHERE id = ? AND status = 'active'");
+
   // Standalone B2B landing page
   router.get('/partners', (req, res) => {
     res.type('text/html; charset=utf-8').send(renderPartnersPageHtml());
+  });
+
+  // Printable Co-Branded Counter QR Flyer for any active partner pharmacy
+  router.get('/partners/:id/flyer', (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(404).type('text/plain').send('Partner flyer not found');
+    }
+    const partner = getPartnerByIdStmt.get(id);
+    if (!partner || partner.status !== 'active') {
+      return res.status(404).type('text/plain').send('Partner flyer not available');
+    }
+    res.type('text/html; charset=utf-8').send(renderFlyerHtml(partner));
   });
 
   // Public B2B application submission (+ automatic Stripe Checkout for paid plans when configured)
@@ -526,6 +633,8 @@ function createB2bRouter(db) {
     const websiteUrl = cleanHttpUrl(body.website_url);
     const transferUrl = cleanHttpUrl(body.transfer_url);
     const tagline = cleanText(body.tagline, 140) || null;
+    const services = normalizeServices(body.services);
+    const cashPriceNote = cleanText(body.cash_price_note, 120) || null;
     const planTier = ALLOWED_PLANS.has(body.plan_tier) ? body.plan_tier : 'pilot_60d';
     const maxZips = planTier === 'multi_349' ? 25 : 5;
     const zips = normalizeZipList(body.zip_codes, maxZips);
@@ -554,6 +663,8 @@ function createB2bRouter(db) {
       websiteUrl,
       transferUrl,
       tagline,
+      services.join(','),
+      cashPriceNote,
       zips.join(','),
       planTier,
       npiNumber,
@@ -576,6 +687,7 @@ function createB2bRouter(db) {
       success: true,
       id: partnerId,
       zip_codes: zips,
+      services,
       npi_verified: npiVerified === 1,
       checkout_url: checkoutUrl,
       message: checkoutUrl
@@ -624,7 +736,7 @@ function createB2bRouter(db) {
     res.json({ received: true });
   });
 
-  // Zero-PII local sponsored pharmacy lookup (ZIP-only POST body, never paired with a drug name)
+  // Zero-PII local sponsored pharmacy lookup (ZIP-only POST body, capped at 2 exclusive partners/ZIP)
   router.post('/api/b2b/local', (req, res) => {
     const zip = String(req.body?.zip || '').replace(/[^0-9]/g, '');
     if (zip.length !== 5) {
@@ -634,8 +746,12 @@ function createB2bRouter(db) {
     const active = listActivePartnersStmt.all();
     const matched = active
       .filter(p => String(p.zip_codes || '').split(',').includes(zip))
-      .slice(0, 3)
-      .map(p => ({
+      .slice(0, MAX_ACTIVE_PARTNERS_PER_ZIP);
+
+    const payload = matched.map(p => {
+      incImpressionStmt.run(p.id);
+      const serviceLabels = normalizeServices(p.services).map(k => SERVICE_LABELS[k]);
+      return {
         id: p.id,
         business_name: p.business_name,
         business_type: p.business_type,
@@ -644,17 +760,36 @@ function createB2bRouter(db) {
         website_url: p.website_url || null,
         transfer_url: p.transfer_url || null,
         tagline: p.tagline || null,
-      }));
+        cash_price_note: p.cash_price_note || null,
+        services: serviceLabels,
+      };
+    });
 
-    res.json({ zip, partners: matched });
+    res.json({ zip, partners: payload });
   });
 
-  // Admin: List all partner applications & active listings
+  // Zero-PII aggregate click counter (partner_id + event_type ONLY — no IPs, user IDs, or drug names)
+  router.post('/api/b2b/event', (req, res) => {
+    const partnerId = parseInt(req.body?.partner_id, 10);
+    const eventType = String(req.body?.event_type || '').trim().toLowerCase();
+    if (!Number.isFinite(partnerId) || partnerId <= 0 || !ALLOWED_EVENTS.has(eventType)) {
+      return res.status(400).json({ error: 'Invalid event payload' });
+    }
+    if (eventType === 'call') incCallStmt.run(partnerId);
+    else if (eventType === 'transfer') incTransferStmt.run(partnerId);
+    else if (eventType === 'website') incWebsiteStmt.run(partnerId);
+    res.json({ recorded: true });
+  });
+
+  // Admin: List all partner applications, active listings, flyer URLs, and aggregate ROI metrics
   router.get('/api/admin/b2b/partners', (req, res) => {
     if (!isValidAdminKey(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const partners = listAllAdminStmt.all();
+    const partners = listAllAdminStmt.all().map(p => ({
+      ...p,
+      flyer_url: p.status === 'active' ? `${SITE_ORIGIN}/partners/${p.id}/flyer` : null,
+    }));
     res.json({ count: partners.length, partners });
   });
 
@@ -672,7 +807,12 @@ function createB2bRouter(db) {
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Not Found', message: 'Partner not found.' });
     }
-    res.json({ success: true, id, status });
+    res.json({
+      success: true,
+      id,
+      status,
+      flyer_url: status === 'active' ? `${SITE_ORIGIN}/partners/${id}/flyer` : null,
+    });
   });
 
   // Admin: Generate a Stripe Customer Billing Portal URL for a paid partner
@@ -720,4 +860,5 @@ function createB2bRouter(db) {
 module.exports = {
   createB2bRouter,
   verifyStripeWebhookSignature,
+  SERVICE_LABELS,
 };

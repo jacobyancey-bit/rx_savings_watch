@@ -74,6 +74,24 @@ function initSchema(db) {
     if (!b2bCols.some(c => c.name === 'stripe_subscription_id')) {
       db.exec('ALTER TABLE b2b_partners ADD COLUMN stripe_subscription_id TEXT;');
     }
+    if (!b2bCols.some(c => c.name === 'services')) {
+      db.exec("ALTER TABLE b2b_partners ADD COLUMN services TEXT NOT NULL DEFAULT '';");
+    }
+    if (!b2bCols.some(c => c.name === 'cash_price_note')) {
+      db.exec('ALTER TABLE b2b_partners ADD COLUMN cash_price_note TEXT;');
+    }
+    if (!b2bCols.some(c => c.name === 'impressions_count')) {
+      db.exec('ALTER TABLE b2b_partners ADD COLUMN impressions_count INTEGER NOT NULL DEFAULT 0;');
+    }
+    if (!b2bCols.some(c => c.name === 'call_clicks')) {
+      db.exec('ALTER TABLE b2b_partners ADD COLUMN call_clicks INTEGER NOT NULL DEFAULT 0;');
+    }
+    if (!b2bCols.some(c => c.name === 'transfer_clicks')) {
+      db.exec('ALTER TABLE b2b_partners ADD COLUMN transfer_clicks INTEGER NOT NULL DEFAULT 0;');
+    }
+    if (!b2bCols.some(c => c.name === 'website_clicks')) {
+      db.exec('ALTER TABLE b2b_partners ADD COLUMN website_clicks INTEGER NOT NULL DEFAULT 0;');
+    }
   }
 }
 

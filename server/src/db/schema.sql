@@ -208,6 +208,8 @@ CREATE TABLE IF NOT EXISTS b2b_partners (
     website_url TEXT,
     transfer_url TEXT,
     tagline TEXT,
+    services TEXT NOT NULL DEFAULT '', -- Comma-separated public service badges
+    cash_price_note TEXT, -- Public store cash-price highlight (zero PHI)
     zip_codes TEXT NOT NULL DEFAULT '', -- Comma-separated 5-digit U.S. ZIP codes
     plan_tier TEXT NOT NULL DEFAULT 'pilot_60d',
     npi_number TEXT,
@@ -215,6 +217,10 @@ CREATE TABLE IF NOT EXISTS b2b_partners (
     payment_status TEXT NOT NULL DEFAULT 'unpaid' CHECK(payment_status IN ('unpaid', 'trial', 'paid', 'past_due', 'canceled')),
     stripe_customer_id TEXT,
     stripe_subscription_id TEXT,
+    impressions_count INTEGER NOT NULL DEFAULT 0,
+    call_clicks INTEGER NOT NULL DEFAULT 0,
+    transfer_clicks INTEGER NOT NULL DEFAULT 0,
+    website_clicks INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'active', 'paused')),
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))

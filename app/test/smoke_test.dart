@@ -477,6 +477,8 @@ void main() {
                   'address': '123 Main St, Addison, TX 75001',
                   'transfer_url': 'https://mainstreetrx.com/transfer',
                   'tagline': 'Transparent cash prices & free local delivery',
+                  'cash_price_note': 'Most 30-day generics \$10 cash',
+                  'services': ['Free Local Delivery', 'Blister Packs'],
                 },
               ],
               initialPartners: const [
@@ -539,6 +541,9 @@ void main() {
       expect(find.text('Pharmacies near 75001'), findsOneWidget);
       expect(find.text('Main Street Independent Pharmacy'), findsOneWidget);
       expect(find.text('Sponsored Local Partner'), findsOneWidget);
+      expect(find.text('Most 30-day generics \$10 cash'), findsOneWidget);
+      expect(find.text('Free Local Delivery'), findsOneWidget);
+      expect(find.text('Blister Packs'), findsOneWidget);
 
       // Partner buttons are rendered via native url_launcher Link(target: LinkTarget.blank) with local ZIP
       final links = tester.widgetList<Link>(find.byType(Link)).toList();

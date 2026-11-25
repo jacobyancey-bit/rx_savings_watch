@@ -50,6 +50,8 @@ describe('B2B Pharmacy & Clinic Partner Program', () => {
         website_url: 'https://mainstreetrx.com',
         transfer_url: 'https://mainstreetrx.com/transfer',
         tagline: 'Transparent cash prices & free local delivery',
+        cash_price_note: 'Most 30-day generics $10 cash',
+        services: ['free_delivery', 'blister_packs'],
         zip_codes: '75001, 75002',
         plan_tier: 'pilot_60d',
       }),
@@ -58,6 +60,7 @@ describe('B2B Pharmacy & Clinic Partner Program', () => {
     const created = await applyRes.json();
     assert.equal(created.success, true);
     assert.deepEqual(created.zip_codes, ['75001', '75002']);
+    assert.deepEqual(created.services, ['free_delivery', 'blister_packs']);
 
     // 2. While pending, must NOT show up in public local lookup
     const beforeApprove = await fetch(`${baseUrl}/api/b2b/local`, {
@@ -90,7 +93,32 @@ describe('B2B Pharmacy & Clinic Partner Program', () => {
     }).then(r => r.json());
     assert.equal(matched.partners.length, 1);
     assert.equal(matched.partners[0].business_name, 'Main Street Independent Pharmacy');
+    assert.equal(matched.partners[0].cash_price_note, 'Most 30-day generics $10 cash');
+    assert.deepEqual(matched.partners[0].services, ['Free Local Delivery', 'Blister Packs']);
     assert.equal(matched.partners[0].contact_email, undefined); // Private email never exposed publicly
+
+    // 6. Zero-PII click event increments aggregate counters + flyer page renders for active partner
+    const evRes = await fetch(`${baseUrl}/api/b2b/event`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ partner_id: created.id, event_type: 'transfer' }),
+    });
+    assert.equal(evRes.status, 200);
+
+    const adminList = await fetch(`${baseUrl}/api/admin/b2b/partners`, {
+      headers: { 'X-Admin-Key': config.ADMIN_API_KEY },
+    }).then(r => r.json());
+    const row = adminList.partners.find(p => p.id === created.id);
+    assert.equal(row.impressions_count, 1);
+    assert.equal(row.transfer_clicks, 1);
+    assert.match(row.flyer_url, /\/partners\/\d+\/flyer$/);
+
+    const flyerRes = await fetch(`${baseUrl}/partners/${created.id}/flyer`);
+    assert.equal(flyerRes.status, 200);
+    const flyerHtml = await flyerRes.text();
+    assert.match(flyerHtml, /Main Street Independent Pharmacy/);
+    assert.match(flyerHtml, /Most 30-day generics \$10 cash/);
+    assert.match(flyerHtml, /zip%3D75001/);
 
     const unmatched = await fetch(`${baseUrl}/api/b2b/local`, {
       method: 'POST',

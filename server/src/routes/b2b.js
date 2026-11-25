@@ -1,20 +1,20 @@
-const express = require('express');
-const crypto = require('node:crypto');
-const config = require('../config');
+const express = require("express");
+const crypto = require("node:crypto");
+const config = require("../config");
 
-const SITE_ORIGIN = 'https://rx.dangling-dice-studios.com';
-const ALLOWED_TYPES = new Set(['pharmacy', 'clinic', 'senior_care']);
-const ALLOWED_PLANS = new Set(['pilot_60d', 'local_149', 'multi_349']);
-const ALLOWED_STATUSES = new Set(['pending', 'active', 'paused']);
-const ALLOWED_EVENTS = new Set(['call', 'transfer', 'website']);
+const SITE_ORIGIN = "https://rx.dangling-dice-studios.com";
+const ALLOWED_TYPES = new Set(["pharmacy", "clinic", "senior_care"]);
+const ALLOWED_PLANS = new Set(["pilot_60d", "local_149", "multi_349"]);
+const ALLOWED_STATUSES = new Set(["pending", "active", "paused"]);
+const ALLOWED_EVENTS = new Set(["call", "transfer", "website"]);
 const SERVICE_LABELS = {
-  free_delivery: 'Free Local Delivery',
-  compounding: 'Compounding',
-  med_sync: 'Med-Sync / Auto-Refill',
-  blister_packs: 'Blister Packs',
-  drive_thru: 'Drive-Thru',
-  bilingual: 'Bilingual Staff',
-  vaccines: 'Walk-In Vaccines',
+  free_delivery: "Free Local Delivery",
+  compounding: "Compounding",
+  med_sync: "Med-Sync / Auto-Refill",
+  blister_packs: "Blister Packs",
+  drive_thru: "Drive-Thru",
+  bilingual: "Bilingual Staff",
+  vaccines: "Walk-In Vaccines",
 };
 const APPLY_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const APPLY_MAX_PER_IP = 8;
@@ -22,18 +22,18 @@ const STRIPE_WEBHOOK_TOLERANCE_SEC = 300; // 5 minutes
 const MAX_ACTIVE_PARTNERS_PER_ZIP = 2;
 
 function escapeHtml(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function cleanText(raw, maxLen = 160) {
-  return String(raw || '')
-    .replace(/[\x00-\x1F\x7F]/g, ' ')
-    .replace(/\s+/g, ' ')
+  return String(raw || "")
+    .replace(/[\x00-\x1F\x7F]/g, " ")
+    .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLen);
 }
@@ -42,8 +42,11 @@ function cleanHttpUrl(raw) {
   const trimmed = cleanText(raw, 300);
   if (!trimmed) return null;
   try {
-    const parsed = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+    const parsed = new URL(
+      trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+    );
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:")
+      return null;
     return parsed.toString();
   } catch (_) {
     return null;
@@ -51,28 +54,30 @@ function cleanHttpUrl(raw) {
 }
 
 function normalizeZipList(raw, maxZips = 25) {
-  const matches = String(raw || '').match(/\b\d{5}\b/g) || [];
+  const matches = String(raw || "").match(/\b\d{5}\b/g) || [];
   return Array.from(new Set(matches)).slice(0, maxZips);
 }
 
 function normalizeServices(raw) {
-  const items = Array.isArray(raw)
-    ? raw
-    : String(raw || '').split(',');
+  const items = Array.isArray(raw) ? raw : String(raw || "").split(",");
   const clean = items
-    .map(s => String(s || '').trim().toLowerCase())
-    .filter(s => Object.prototype.hasOwnProperty.call(SERVICE_LABELS, s));
+    .map((s) =>
+      String(s || "")
+        .trim()
+        .toLowerCase(),
+    )
+    .filter((s) => Object.prototype.hasOwnProperty.call(SERVICE_LABELS, s));
   return Array.from(new Set(clean));
 }
 
 function normalizeNpi(raw) {
-  const digits = String(raw || '').replace(/[^0-9]/g, '');
+  const digits = String(raw || "").replace(/[^0-9]/g, "");
   return digits.length === 10 ? digits : null;
 }
 
 function isValidAdminKey(req) {
-  const provided = String(req.get('X-Admin-Key') || '');
-  const expected = String(config.ADMIN_API_KEY || '');
+  const provided = String(req.get("X-Admin-Key") || "");
+  const expected = String(config.ADMIN_API_KEY || "");
   if (!provided || !expected) return false;
   const a = Buffer.from(provided);
   const b = Buffer.from(expected);
@@ -81,59 +86,77 @@ function isValidAdminKey(req) {
 }
 
 async function verifyNpiWithCms(npi) {
-  if (!npi || npi.length !== 10 || process.env.NODE_ENV === 'test') {
+  if (!npi || npi.length !== 10 || process.env.NODE_ENV === "test") {
     return false;
   }
   try {
-    const res = await fetch(`https://npiregistry.cms.hhs.gov/api/?version=2.1&number=${encodeURIComponent(npi)}`, {
-      headers: { 'User-Agent': 'RxSavingsWatch/1.0' },
-      signal: AbortSignal.timeout(6000),
-    });
+    const res = await fetch(
+      `https://npiregistry.cms.hhs.gov/api/?version=2.1&number=${encodeURIComponent(npi)}`,
+      {
+        headers: { "User-Agent": "RxSavingsWatch/1.0" },
+        signal: AbortSignal.timeout(6000),
+      },
+    );
     if (!res.ok) return false;
     const data = await res.json();
     const first = Array.isArray(data.results) ? data.results[0] : null;
-    return Boolean(first && String(first.number) === npi && first.basic?.status === 'A');
+    return Boolean(
+      first && String(first.number) === npi && first.basic?.status === "A",
+    );
   } catch (_) {
     return false;
   }
 }
 
 function getStripePriceId(planTier) {
-  if (planTier === 'local_149') return (process.env.STRIPE_PRICE_LOCAL_149 || '').trim() || null;
-  if (planTier === 'multi_349') return (process.env.STRIPE_PRICE_MULTI_349 || '').trim() || null;
+  if (planTier === "local_149")
+    return (process.env.STRIPE_PRICE_LOCAL_149 || "").trim() || null;
+  if (planTier === "multi_349")
+    return (process.env.STRIPE_PRICE_MULTI_349 || "").trim() || null;
   return null;
 }
 
-async function createStripeCheckoutSession({ partnerId, planTier, contactEmail, businessName }) {
-  const secretKey = (process.env.STRIPE_SECRET_KEY || '').trim();
+async function createStripeCheckoutSession({
+  partnerId,
+  planTier,
+  contactEmail,
+  businessName,
+}) {
+  const secretKey = (process.env.STRIPE_SECRET_KEY || "").trim();
   const priceId = getStripePriceId(planTier);
   if (!secretKey || !priceId) return null;
 
   const params = new URLSearchParams();
-  params.set('mode', 'subscription');
-  params.set('client_reference_id', String(partnerId));
-  params.set('customer_email', contactEmail);
-  params.set('line_items[0][price]', priceId);
-  params.set('line_items[0][quantity]', '1');
-  params.set('success_url', `${SITE_ORIGIN}/partners?checkout=success&partner_id=${partnerId}`);
-  params.set('cancel_url', `${SITE_ORIGIN}/partners?checkout=canceled&partner_id=${partnerId}`);
-  params.set('metadata[partner_id]', String(partnerId));
-  params.set('metadata[plan_tier]', planTier);
-  params.set('metadata[business_name]', businessName.slice(0, 120));
+  params.set("mode", "subscription");
+  params.set("client_reference_id", String(partnerId));
+  params.set("customer_email", contactEmail);
+  params.set("line_items[0][price]", priceId);
+  params.set("line_items[0][quantity]", "1");
+  params.set(
+    "success_url",
+    `${SITE_ORIGIN}/partners?checkout=success&partner_id=${partnerId}`,
+  );
+  params.set(
+    "cancel_url",
+    `${SITE_ORIGIN}/partners?checkout=canceled&partner_id=${partnerId}`,
+  );
+  params.set("metadata[partner_id]", String(partnerId));
+  params.set("metadata[plan_tier]", planTier);
+  params.set("metadata[business_name]", businessName.slice(0, 120));
 
   try {
-    const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-      method: 'POST',
+    const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
       headers: {
         Authorization: `Bearer ${secretKey}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
+        "Content-Type": "application/x-www-form-urlencoded",
       },
       body: params.toString(),
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return null;
     const data = await res.json();
-    return typeof data.url === 'string' ? data.url : null;
+    return typeof data.url === "string" ? data.url : null;
   } catch (_) {
     return null;
   }
@@ -141,27 +164,34 @@ async function createStripeCheckoutSession({ partnerId, planTier, contactEmail, 
 
 function verifyStripeWebhookSignature(rawBody, signatureHeader, webhookSecret) {
   if (!rawBody || !signatureHeader || !webhookSecret) return false;
-  const parts = String(signatureHeader).split(',');
+  const parts = String(signatureHeader).split(",");
   let timestamp = null;
   const signatures = [];
   for (const part of parts) {
-    const [k, v] = part.trim().split('=');
-    if (k === 't') timestamp = parseInt(v, 10);
-    if (k === 'v1' && v) signatures.push(v);
+    const [k, v] = part.trim().split("=");
+    if (k === "t") timestamp = parseInt(v, 10);
+    if (k === "v1" && v) signatures.push(v);
   }
-  if (!timestamp || !Number.isFinite(timestamp) || signatures.length === 0) return false;
+  if (!timestamp || !Number.isFinite(timestamp) || signatures.length === 0)
+    return false;
 
   const ageSec = Math.abs(Math.floor(Date.now() / 1000) - timestamp);
   if (ageSec > STRIPE_WEBHOOK_TOLERANCE_SEC) return false;
 
-  const payload = `${timestamp}.${Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody)}`;
-  const expectedHex = crypto.createHmac('sha256', webhookSecret).update(payload, 'utf8').digest('hex');
-  const expectedBuf = Buffer.from(expectedHex, 'hex');
+  const payload = `${timestamp}.${Buffer.isBuffer(rawBody) ? rawBody.toString("utf8") : String(rawBody)}`;
+  const expectedHex = crypto
+    .createHmac("sha256", webhookSecret)
+    .update(payload, "utf8")
+    .digest("hex");
+  const expectedBuf = Buffer.from(expectedHex, "hex");
 
   for (const sig of signatures) {
     try {
-      const providedBuf = Buffer.from(sig, 'hex');
-      if (providedBuf.length === expectedBuf.length && crypto.timingSafeEqual(providedBuf, expectedBuf)) {
+      const providedBuf = Buffer.from(sig, "hex");
+      if (
+        providedBuf.length === expectedBuf.length &&
+        crypto.timingSafeEqual(providedBuf, expectedBuf)
+      ) {
         return true;
       }
     } catch (_) {}
@@ -170,10 +200,17 @@ function verifyStripeWebhookSignature(rawBody, signatureHeader, webhookSecret) {
 }
 
 function renderFlyerHtml(partner) {
-  const firstZip = String(partner.zip_codes || '').split(',').filter(Boolean)[0] || '';
-  const targetUrl = firstZip ? `${SITE_ORIGIN}/?zip=${encodeURIComponent(firstZip)}` : `${SITE_ORIGIN}/`;
+  const firstZip =
+    String(partner.zip_codes || "")
+      .split(",")
+      .filter(Boolean)[0] || "";
+  const targetUrl = firstZip
+    ? `${SITE_ORIGIN}/?zip=${encodeURIComponent(firstZip)}`
+    : `${SITE_ORIGIN}/`;
   const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(targetUrl)}`;
-  const badges = normalizeServices(partner.services).map(k => `<span class="badge">${escapeHtml(SERVICE_LABELS[k])}</span>`).join('');
+  const badges = normalizeServices(partner.services)
+    .map((k) => `<span class="badge">${escapeHtml(SERVICE_LABELS[k])}</span>`)
+    .join("");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -213,11 +250,11 @@ function renderFlyerHtml(partner) {
     <div class="qr-box">
       <img src="${qrImgUrl}" width="210" height="210" alt="Scan to open Rx Savings Watch">
     </div>
-    ${partner.cash_price_note ? `<div class="cash">${escapeHtml(partner.cash_price_note)}</div>` : ''}
-    ${badges ? `<div class="badges">${badges}</div>` : ''}
+    ${partner.cash_price_note ? `<div class="cash">${escapeHtml(partner.cash_price_note)}</div>` : ""}
+    ${badges ? `<div class="badges">${badges}</div>` : ""}
     <div class="contact">
-      ${partner.phone ? `<strong>Call Us:</strong> ${escapeHtml(partner.phone)}` : ''}
-      ${partner.address ? `<br>${escapeHtml(partner.address)}` : ''}
+      ${partner.phone ? `<strong>Call Us:</strong> ${escapeHtml(partner.phone)}` : ""}
+      ${partner.address ? `<br>${escapeHtml(partner.address)}` : ""}
     </div>
     <div class="foot">
       Powered by Rx Savings Watch (rx.dangling-dice-studios.com) • Zero accounts, zero tracking, zero PHI collected.<br>
@@ -229,12 +266,16 @@ function renderFlyerHtml(partner) {
 }
 
 function renderPartnersPageHtml() {
-  const serviceCheckboxes = Object.entries(SERVICE_LABELS).map(([key, label]) => `
+  const serviceCheckboxes = Object.entries(SERVICE_LABELS)
+    .map(
+      ([key, label]) => `
     <label class="check-pill">
       <input type="checkbox" name="services" value="${key}">
       <span>${escapeHtml(label)}</span>
     </label>
-  `).join('');
+  `,
+    )
+    .join("");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -552,7 +593,9 @@ function createB2bRouter(db) {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
   `);
 
-  const getPartnerByIdStmt = db.prepare('SELECT * FROM b2b_partners WHERE id = ?');
+  const getPartnerByIdStmt = db.prepare(
+    "SELECT * FROM b2b_partners WHERE id = ?",
+  );
 
   const listActivePartnersStmt = db.prepare(`
     SELECT id, business_name, business_type, phone, address, website_url, transfer_url,
@@ -590,42 +633,56 @@ function createB2bRouter(db) {
     WHERE stripe_subscription_id = ?
   `);
 
-  const incImpressionStmt = db.prepare('UPDATE b2b_partners SET impressions_count = impressions_count + 1 WHERE id = ?');
-  const incCallStmt = db.prepare("UPDATE b2b_partners SET call_clicks = call_clicks + 1 WHERE id = ? AND status = 'active'");
-  const incTransferStmt = db.prepare("UPDATE b2b_partners SET transfer_clicks = transfer_clicks + 1 WHERE id = ? AND status = 'active'");
-  const incWebsiteStmt = db.prepare("UPDATE b2b_partners SET website_clicks = website_clicks + 1 WHERE id = ? AND status = 'active'");
+  const incImpressionStmt = db.prepare(
+    "UPDATE b2b_partners SET impressions_count = impressions_count + 1 WHERE id = ?",
+  );
+  const incCallStmt = db.prepare(
+    "UPDATE b2b_partners SET call_clicks = call_clicks + 1 WHERE id = ? AND status = 'active'",
+  );
+  const incTransferStmt = db.prepare(
+    "UPDATE b2b_partners SET transfer_clicks = transfer_clicks + 1 WHERE id = ? AND status = 'active'",
+  );
+  const incWebsiteStmt = db.prepare(
+    "UPDATE b2b_partners SET website_clicks = website_clicks + 1 WHERE id = ? AND status = 'active'",
+  );
 
   // Standalone B2B landing page
-  router.get('/partners', (req, res) => {
-    res.type('text/html; charset=utf-8').send(renderPartnersPageHtml());
+  router.get("/partners", (req, res) => {
+    res.type("text/html; charset=utf-8").send(renderPartnersPageHtml());
   });
 
   // Printable Co-Branded Counter QR Flyer for any active partner pharmacy
-  router.get('/partners/:id/flyer', (req, res) => {
+  router.get("/partners/:id/flyer", (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id) || id <= 0) {
-      return res.status(404).type('text/plain').send('Partner flyer not found');
+      return res.status(404).type("text/plain").send("Partner flyer not found");
     }
     const partner = getPartnerByIdStmt.get(id);
-    if (!partner || partner.status !== 'active') {
-      return res.status(404).type('text/plain').send('Partner flyer not available');
+    if (!partner || partner.status !== "active") {
+      return res
+        .status(404)
+        .type("text/plain")
+        .send("Partner flyer not available");
     }
-    res.type('text/html; charset=utf-8').send(renderFlyerHtml(partner));
+    res.type("text/html; charset=utf-8").send(renderFlyerHtml(partner));
   });
 
   // Public B2B application submission (+ automatic Stripe Checkout for paid plans when configured)
-  router.post('/api/b2b/apply', async (req, res) => {
-    const clientIp = req.ip || 'unknown';
+  router.post("/api/b2b/apply", async (req, res) => {
+    const clientIp = req.ip || "unknown";
     if (!canApplyForIp(clientIp)) {
       return res.status(429).json({
-        error: 'Too Many Requests',
-        message: 'Too many applications submitted recently. Please try again later.',
+        error: "Too Many Requests",
+        message:
+          "Too many applications submitted recently. Please try again later.",
       });
     }
 
     const body = req.body || {};
     const businessName = cleanText(body.business_name, 120);
-    const businessType = ALLOWED_TYPES.has(body.business_type) ? body.business_type : 'pharmacy';
+    const businessType = ALLOWED_TYPES.has(body.business_type)
+      ? body.business_type
+      : "pharmacy";
     const contactName = cleanText(body.contact_name, 100);
     const contactEmail = cleanText(body.contact_email, 140);
     const phone = cleanText(body.phone, 40) || null;
@@ -635,23 +692,40 @@ function createB2bRouter(db) {
     const tagline = cleanText(body.tagline, 140) || null;
     const services = normalizeServices(body.services);
     const cashPriceNote = cleanText(body.cash_price_note, 120) || null;
-    const planTier = ALLOWED_PLANS.has(body.plan_tier) ? body.plan_tier : 'pilot_60d';
-    const maxZips = planTier === 'multi_349' ? 25 : 5;
+    const planTier = ALLOWED_PLANS.has(body.plan_tier)
+      ? body.plan_tier
+      : "pilot_60d";
+    const maxZips = planTier === "multi_349" ? 25 : 5;
     const zips = normalizeZipList(body.zip_codes, maxZips);
     const npiNumber = normalizeNpi(body.npi_number);
 
     if (businessName.length < 2) {
-      return res.status(400).json({ error: 'Bad Request', message: 'Business name is required.' });
+      return res
+        .status(400)
+        .json({ error: "Bad Request", message: "Business name is required." });
     }
-    if (contactName.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
-      return res.status(400).json({ error: 'Bad Request', message: 'Valid contact name and work email are required.' });
+    if (
+      contactName.length < 2 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)
+    ) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Valid contact name and work email are required.",
+      });
     }
     if (zips.length === 0) {
-      return res.status(400).json({ error: 'Bad Request', message: 'Please enter at least one valid 5-digit U.S. ZIP code.' });
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Please enter at least one valid 5-digit U.S. ZIP code.",
+      });
     }
 
-    const npiVerified = npiNumber ? (await verifyNpiWithCms(npiNumber) ? 1 : 0) : 0;
-    const initialPaymentStatus = planTier === 'pilot_60d' ? 'trial' : 'unpaid';
+    const npiVerified = npiNumber
+      ? (await verifyNpiWithCms(npiNumber))
+        ? 1
+        : 0
+      : 0;
+    const initialPaymentStatus = planTier === "pilot_60d" ? "trial" : "unpaid";
 
     const result = insertPartnerStmt.run(
       businessName,
@@ -663,18 +737,18 @@ function createB2bRouter(db) {
       websiteUrl,
       transferUrl,
       tagline,
-      services.join(','),
+      services.join(","),
       cashPriceNote,
-      zips.join(','),
+      zips.join(","),
       planTier,
       npiNumber,
       npiVerified,
-      initialPaymentStatus
+      initialPaymentStatus,
     );
 
     const partnerId = Number(result.lastInsertRowid);
     let checkoutUrl = null;
-    if (planTier !== 'pilot_60d') {
+    if (planTier !== "pilot_60d") {
       checkoutUrl = await createStripeCheckoutSession({
         partnerId,
         planTier,
@@ -691,66 +765,209 @@ function createB2bRouter(db) {
       npi_verified: npiVerified === 1,
       checkout_url: checkoutUrl,
       message: checkoutUrl
-        ? 'Redirecting to secure Stripe Checkout...'
-        : `Application received for ${businessName} (${zips.join(', ')}). We will review and follow up within 1-2 business days.`,
+        ? "Redirecting to secure Stripe Checkout..."
+        : `Application received for ${businessName} (${zips.join(", ")}). We will review and follow up within 1-2 business days.`,
     });
   });
 
   // Signed Stripe webhook for automated payment & subscription lifecycle
-  router.post('/api/b2b/stripe-webhook', (req, res) => {
-    const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET || '').trim();
+  router.post("/api/b2b/stripe-webhook", (req, res) => {
+    const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET || "").trim();
     if (!webhookSecret) {
-      return res.status(503).json({ error: 'Stripe webhook secret not configured' });
+      return res
+        .status(503)
+        .json({ error: "Stripe webhook secret not configured" });
     }
 
-    const sigHeader = req.get('Stripe-Signature');
+    const sigHeader = req.get("Stripe-Signature");
     if (!verifyStripeWebhookSignature(req.rawBody, sigHeader, webhookSecret)) {
-      return res.status(400).json({ error: 'Invalid Stripe signature' });
+      return res.status(400).json({ error: "Invalid Stripe signature" });
     }
 
     const event = req.body || {};
     const type = event.type;
     const obj = event.data?.object || {};
 
-    if (type === 'checkout.session.completed') {
-      const partnerId = parseInt(obj.client_reference_id || obj.metadata?.partner_id, 10);
+    if (type === "checkout.session.completed") {
+      const partnerId = parseInt(
+        obj.client_reference_id || obj.metadata?.partner_id,
+        10,
+      );
       if (Number.isFinite(partnerId) && partnerId > 0) {
         markPaidByIdStmt.run(
           obj.customer ? String(obj.customer) : null,
           obj.subscription ? String(obj.subscription) : null,
-          partnerId
+          partnerId,
         );
       }
-    } else if (type === 'invoice.payment_failed') {
+    } else if (type === "invoice.payment_failed") {
       const subId = obj.subscription ? String(obj.subscription) : null;
       if (subId) {
-        pauseBySubscriptionStmt.run('past_due', subId);
+        pauseBySubscriptionStmt.run("past_due", subId);
       }
-    } else if (type === 'customer.subscription.deleted') {
+    } else if (type === "customer.subscription.deleted") {
       const subId = obj.id ? String(obj.id) : null;
       if (subId) {
-        pauseBySubscriptionStmt.run('canceled', subId);
+        pauseBySubscriptionStmt.run("canceled", subId);
       }
     }
 
     res.json({ received: true });
   });
 
-  // Zero-PII local sponsored pharmacy lookup (ZIP-only POST body, capped at 2 exclusive partners/ZIP)
-  router.post('/api/b2b/local', (req, res) => {
-    const zip = String(req.body?.zip || '').replace(/[^0-9]/g, '');
+const NPI_ZIP_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const NPI_ZIP_CACHE_MAX = 500;
+const npiZipCache = new Map(); // zip -> { expiresAt, pharmacies }
+
+function formatPharmacyName(raw) {
+  let name = String(raw || "").trim();
+  if (!name) return "Local Pharmacy";
+  // Strip noisy corporate suffixes for readability
+  name = name
+    .replace(/\b(INC\.?|LLC\.?|L\.?L\.?C\.?|L\.?\s*P\.?|CORP\.?|CORPORATION|CO\.?|LTD\.?)\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/[,-]\s*$/, "")
+    .trim();
+  if (!name) return "Local Pharmacy";
+  // Convert ALL-CAPS CMS names to readable Title Case while preserving acronyms
+  const ACRONYMS = new Set(["CVS", "RX", "HEB", "H-E-B", "US", "USA", "VA", "DR", "NW", "NE", "SW", "SE"]);
+  if (name === name.toUpperCase()) {
+    name = name
+      .split(/\s+/)
+      .map((word) => {
+        const clean = word.replace(/[^A-Z0-9-]/g, "");
+        if (ACRONYMS.has(clean)) return word;
+        if (/^#?\d+$/.test(word)) return word;
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(" ");
+  }
+  return name;
+}
+
+function formatUsPhone(raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  return raw ? String(raw).trim() : null;
+}
+
+function formatStreetAddress(loc) {
+  if (!loc) return null;
+  const line1 = [loc.address_1, loc.address_2]
+    .map((s) => String(s || "").trim())
+    .filter(Boolean)
+    .join(", ");
+  const city = String(loc.city || "").trim();
+  const state = String(loc.state || "").trim().toUpperCase();
+  const zip5 = String(loc.postal_code || "").replace(/\D/g, "").slice(0, 5);
+  const title = (s) =>
+    s
+      .split(/\s+/)
+      .map((w) => (w.length <= 2 && /^[A-Z]+$/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()))
+      .join(" ");
+  const parts = [];
+  if (line1) parts.push(title(line1));
+  const cityState = [city ? title(city) : "", state].filter(Boolean).join(", ");
+  if (cityState || zip5) parts.push([cityState, zip5].filter(Boolean).join(" "));
+  return parts.join(", ") || null;
+}
+
+async function fetchNpiPharmaciesByTaxonomy(zip, taxonomy) {
+  const url =
+    `https://npiregistry.cms.hhs.gov/api/?version=2.1&enumeration_type=NPI-2` +
+    `&taxonomy_description=${encodeURIComponent(taxonomy)}` +
+    `&postal_code=${encodeURIComponent(zip)}&limit=25`;
+  const res = await fetch(url, {
+    headers: { "User-Agent": "RxSavingsWatch/1.0" },
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data.results) ? data.results : [];
+}
+
+async function lookupLocalNpiPharmacies(zip) {
+  if (process.env.NODE_ENV === "test") return [];
+  const now = Date.now();
+  const cached = npiZipCache.get(zip);
+  if (cached && cached.expiresAt > now) return cached.pharmacies;
+
+  try {
+    let rawResults = await fetchNpiPharmaciesByTaxonomy(zip, "Community/Retail Pharmacy");
+    if (rawResults.length === 0) {
+      rawResults = await fetchNpiPharmaciesByTaxonomy(zip, "Pharmacy");
+    }
+
+    const seenKeys = new Set();
+    const pharmacies = [];
+
+    for (const entry of rawResults) {
+      if (entry?.basic?.status && entry.basic.status !== "A") continue;
+      const loc =
+        (entry.addresses || []).find((a) => a.address_purpose === "LOCATION") ||
+        (entry.addresses || [])[0];
+      if (!loc) continue;
+      const locZip = String(loc.postal_code || "").replace(/\D/g, "").slice(0, 5);
+      if (locZip && locZip !== zip) continue;
+
+      // Prefer Doing Business As (DBA) name when available (e.g., "Kroger Pharmacy" over "KROGER TEXAS L P")
+      const dba = (entry.other_names || []).find(
+        (n) => n?.organization_name && String(n.type || "").toLowerCase().includes("doing business"),
+      )?.organization_name;
+      const rawName = dba || entry.basic?.organization_name || "";
+      const name = formatPharmacyName(rawName);
+      const address = formatStreetAddress(loc);
+      const phone = formatUsPhone(loc.telephone_number);
+      const phoneDigits = String(loc.telephone_number || "").replace(/\D/g, "");
+      const addrKey = String(loc.address_1 || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 14);
+      const dedupeKey = phoneDigits.length >= 10 ? `p:${phoneDigits}` : `a:${addrKey}:${name.toLowerCase().slice(0, 12)}`;
+      if (seenKeys.has(dedupeKey)) continue;
+      seenKeys.add(dedupeKey);
+
+      const query = [name, address].filter(Boolean).join(" ");
+      pharmacies.push({
+        npi: String(entry.number || ""),
+        name,
+        address,
+        phone,
+        maps_url: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+      });
+      if (pharmacies.length >= 6) break;
+    }
+
+    if (npiZipCache.size >= NPI_ZIP_CACHE_MAX) {
+      npiZipCache.clear();
+    }
+    npiZipCache.set(zip, { expiresAt: now + NPI_ZIP_CACHE_TTL_MS, pharmacies });
+    return pharmacies;
+  } catch (_) {
+    return [];
+  }
+}
+
+  // Zero-PII local pharmacy lookup (ZIP-only POST body: up to 2 sponsored partners + real CMS NPI retail pharmacies)
+  router.post("/api/b2b/local", async (req, res) => {
+    const zip = String(req.body?.zip || "").replace(/[^0-9]/g, "");
     if (zip.length !== 5) {
-      return res.json({ zip: null, partners: [] });
+      return res.json({ zip: null, partners: [], local_pharmacies: [] });
     }
 
     const active = listActivePartnersStmt.all();
     const matched = active
-      .filter(p => String(p.zip_codes || '').split(',').includes(zip))
+      .filter((p) =>
+        String(p.zip_codes || "")
+          .split(",")
+          .includes(zip),
+      )
       .slice(0, MAX_ACTIVE_PARTNERS_PER_ZIP);
 
-    const payload = matched.map(p => {
+    const payload = matched.map((p) => {
       incImpressionStmt.run(p.id);
-      const serviceLabels = normalizeServices(p.services).map(k => SERVICE_LABELS[k]);
+      const serviceLabels = normalizeServices(p.services).map(
+        (k) => SERVICE_LABELS[k],
+      );
       return {
         id: p.id,
         business_name: p.business_name,
@@ -765,94 +982,125 @@ function createB2bRouter(db) {
       };
     });
 
-    res.json({ zip, partners: payload });
+    const localPharmacies = await lookupLocalNpiPharmacies(zip);
+
+    res.json({ zip, partners: payload, local_pharmacies: localPharmacies });
   });
 
   // Zero-PII aggregate click counter (partner_id + event_type ONLY — no IPs, user IDs, or drug names)
-  router.post('/api/b2b/event', (req, res) => {
+  router.post("/api/b2b/event", (req, res) => {
     const partnerId = parseInt(req.body?.partner_id, 10);
-    const eventType = String(req.body?.event_type || '').trim().toLowerCase();
-    if (!Number.isFinite(partnerId) || partnerId <= 0 || !ALLOWED_EVENTS.has(eventType)) {
-      return res.status(400).json({ error: 'Invalid event payload' });
+    const eventType = String(req.body?.event_type || "")
+      .trim()
+      .toLowerCase();
+    if (
+      !Number.isFinite(partnerId) ||
+      partnerId <= 0 ||
+      !ALLOWED_EVENTS.has(eventType)
+    ) {
+      return res.status(400).json({ error: "Invalid event payload" });
     }
-    if (eventType === 'call') incCallStmt.run(partnerId);
-    else if (eventType === 'transfer') incTransferStmt.run(partnerId);
-    else if (eventType === 'website') incWebsiteStmt.run(partnerId);
+    if (eventType === "call") incCallStmt.run(partnerId);
+    else if (eventType === "transfer") incTransferStmt.run(partnerId);
+    else if (eventType === "website") incWebsiteStmt.run(partnerId);
     res.json({ recorded: true });
   });
 
   // Admin: List all partner applications, active listings, flyer URLs, and aggregate ROI metrics
-  router.get('/api/admin/b2b/partners', (req, res) => {
+  router.get("/api/admin/b2b/partners", (req, res) => {
     if (!isValidAdminKey(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: "Unauthorized" });
     }
-    const partners = listAllAdminStmt.all().map(p => ({
+    const partners = listAllAdminStmt.all().map((p) => ({
       ...p,
-      flyer_url: p.status === 'active' ? `${SITE_ORIGIN}/partners/${p.id}/flyer` : null,
+      flyer_url:
+        p.status === "active" ? `${SITE_ORIGIN}/partners/${p.id}/flyer` : null,
     }));
     res.json({ count: partners.length, partners });
   });
 
   // Admin: Approve ('active'), pause ('paused'), or revert ('pending') a partner
-  router.post('/api/admin/b2b/partners/:id/status', (req, res) => {
+  router.post("/api/admin/b2b/partners/:id/status", (req, res) => {
     if (!isValidAdminKey(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: "Unauthorized" });
     }
     const id = parseInt(req.params.id, 10);
-    const status = String(req.body?.status || '').trim();
+    const status = String(req.body?.status || "").trim();
     if (!Number.isFinite(id) || id <= 0 || !ALLOWED_STATUSES.has(status)) {
-      return res.status(400).json({ error: 'Bad Request', message: 'Valid partner id and status (pending, active, paused) required.' });
+      return res.status(400).json({
+        error: "Bad Request",
+        message:
+          "Valid partner id and status (pending, active, paused) required.",
+      });
     }
     const result = updateStatusStmt.run(status, id);
     if (result.changes === 0) {
-      return res.status(404).json({ error: 'Not Found', message: 'Partner not found.' });
+      return res
+        .status(404)
+        .json({ error: "Not Found", message: "Partner not found." });
     }
     res.json({
       success: true,
       id,
       status,
-      flyer_url: status === 'active' ? `${SITE_ORIGIN}/partners/${id}/flyer` : null,
+      flyer_url:
+        status === "active" ? `${SITE_ORIGIN}/partners/${id}/flyer` : null,
     });
   });
 
   // Admin: Generate a Stripe Customer Billing Portal URL for a paid partner
-  router.post('/api/admin/b2b/partners/:id/billing-portal', async (req, res) => {
-    if (!isValidAdminKey(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    const secretKey = (process.env.STRIPE_SECRET_KEY || '').trim();
-    if (!secretKey) {
-      return res.status(503).json({ error: 'STRIPE_SECRET_KEY not configured' });
-    }
-    const id = parseInt(req.params.id, 10);
-    const partner = getPartnerByIdStmt.get(id);
-    if (!partner || !partner.stripe_customer_id) {
-      return res.status(404).json({ error: 'Partner has no Stripe customer record yet' });
-    }
-
-    const params = new URLSearchParams();
-    params.set('customer', partner.stripe_customer_id);
-    params.set('return_url', `${SITE_ORIGIN}/partners`);
-
-    try {
-      const stripeRes = await fetch('https://api.stripe.com/v1/billing_portal/sessions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${secretKey}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: params.toString(),
-        signal: AbortSignal.timeout(10000),
-      });
-      const data = await stripeRes.json();
-      if (!stripeRes.ok || !data.url) {
-        return res.status(502).json({ error: 'Stripe portal error', details: data.error?.message || 'Unknown error' });
+  router.post(
+    "/api/admin/b2b/partners/:id/billing-portal",
+    async (req, res) => {
+      if (!isValidAdminKey(req)) {
+        return res.status(401).json({ error: "Unauthorized" });
       }
-      res.json({ success: true, url: data.url });
-    } catch (err) {
-      res.status(502).json({ error: 'Failed to reach Stripe', message: err.message });
-    }
-  });
+      const secretKey = (process.env.STRIPE_SECRET_KEY || "").trim();
+      if (!secretKey) {
+        return res
+          .status(503)
+          .json({ error: "STRIPE_SECRET_KEY not configured" });
+      }
+      const id = parseInt(req.params.id, 10);
+      const partner = getPartnerByIdStmt.get(id);
+      if (!partner || !partner.stripe_customer_id) {
+        return res
+          .status(404)
+          .json({ error: "Partner has no Stripe customer record yet" });
+      }
+
+      const params = new URLSearchParams();
+      params.set("customer", partner.stripe_customer_id);
+      params.set("return_url", `${SITE_ORIGIN}/partners`);
+
+      try {
+        const stripeRes = await fetch(
+          "https://api.stripe.com/v1/billing_portal/sessions",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${secretKey}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: params.toString(),
+            signal: AbortSignal.timeout(10000),
+          },
+        );
+        const data = await stripeRes.json();
+        if (!stripeRes.ok || !data.url) {
+          return res.status(502).json({
+            error: "Stripe portal error",
+            details: data.error?.message || "Unknown error",
+          });
+        }
+        res.json({ success: true, url: data.url });
+      } catch (err) {
+        res
+          .status(502)
+          .json({ error: "Failed to reach Stripe", message: err.message });
+      }
+    },
+  );
 
   return router;
 }

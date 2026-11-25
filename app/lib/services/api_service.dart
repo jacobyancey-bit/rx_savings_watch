@@ -157,10 +157,14 @@ class ApiService {
     }
   }
 
-  /// Zero-PII local sponsored pharmacy lookup (sends ONLY a 5-digit ZIP, never a drug name or RxCUI).
-  Future<List<Map<String, dynamic>>> getLocalSponsoredPharmacies(String zip) async {
+  /// Zero-PII local pharmacy lookup (sends ONLY a 5-digit ZIP, never a drug name or RxCUI).
+  /// Returns both any active sponsored B2B partners and real CMS NPI licensed retail pharmacies in that ZIP.
+  Future<({List<Map<String, dynamic>> sponsored, List<Map<String, dynamic>> localPharmacies})>
+      getLocalPharmaciesForZip(String zip) async {
     final clean = zip.replaceAll(RegExp(r'[^0-9]'), '');
-    if (clean.length != 5) return const [];
+    if (clean.length != 5) {
+      return (sponsored: const <Map<String, dynamic>>[], localPharmacies: const <Map<String, dynamic>>[]);
+    }
     try {
       final response = await http
           .post(
@@ -168,13 +172,23 @@ class ApiService {
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({'zip': clean}),
           )
-          .timeout(const Duration(seconds: 8));
-      if (response.statusCode != 200) return const [];
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) {
+        return (sponsored: const <Map<String, dynamic>>[], localPharmacies: const <Map<String, dynamic>>[]);
+      }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      return (data['partners'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+      final sponsored = (data['partners'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+      final local = (data['local_pharmacies'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
+      return (sponsored: sponsored, localPharmacies: local);
     } catch (_) {
-      return const [];
+      return (sponsored: const <Map<String, dynamic>>[], localPharmacies: const <Map<String, dynamic>>[]);
     }
+  }
+
+  /// Zero-PII local sponsored pharmacy lookup (backwards-compatible wrapper).
+  Future<List<Map<String, dynamic>>> getLocalSponsoredPharmacies(String zip) async {
+    final res = await getLocalPharmaciesForZip(zip);
+    return res.sponsored;
   }
 
   /// Zero-PII aggregate B2B click counter (partner_id + event_type ONLY).

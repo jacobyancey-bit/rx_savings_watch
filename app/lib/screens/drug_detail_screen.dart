@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/link.dart';
 import '../models/drug.dart';
 import '../models/refill_info.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
+import '../services/external_nav_service.dart';
 import '../widgets/doctor_handout_sheet.dart';
 import '../widgets/refill_setup_sheet.dart';
 import '../widgets/reminder_sheet.dart';
@@ -14,6 +14,7 @@ class DrugDetailScreen extends StatefulWidget {
   final String? initialStrength;
   final List<Map<String, dynamic>>? initialPartners;
   final List<Map<String, dynamic>>? initialLocalPharmacies;
+  final List<Map<String, dynamic>>? initialDirectoryPharmacies;
 
   const DrugDetailScreen({
     super.key,
@@ -21,6 +22,7 @@ class DrugDetailScreen extends StatefulWidget {
     this.initialStrength,
     this.initialPartners,
     this.initialLocalPharmacies,
+    this.initialDirectoryPharmacies,
   });
 
   @override
@@ -35,10 +37,12 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
   late Drug _drug;
   bool _isRefreshingDetails = false;
   bool _isLoadingPartners = false;
+  bool _isLoadingLocalPharmacies = false;
   String? _selectedStrength;
   String? _selectedRouteGroup;
   List<Map<String, dynamic>> _verifiedPartners = const [];
   List<Map<String, dynamic>> _localSponsoredPharmacies = const [];
+  List<Map<String, dynamic>> _localDirectoryPharmacies = const [];
   String? _loadedLocalZip;
   Map<String, dynamic>? _discountCard;
   Map<String, dynamic>? _brandAssistance;
@@ -143,24 +147,36 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     _loadVerifiedPartners();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (widget.initialLocalPharmacies != null) {
-        setState(() => _localSponsoredPharmacies = List<Map<String, dynamic>>.from(widget.initialLocalPharmacies!));
+      if (widget.initialLocalPharmacies != null || widget.initialDirectoryPharmacies != null) {
+        setState(() {
+          if (widget.initialLocalPharmacies != null) {
+            _localSponsoredPharmacies = List<Map<String, dynamic>>.from(widget.initialLocalPharmacies!);
+          }
+          if (widget.initialDirectoryPharmacies != null) {
+            _localDirectoryPharmacies = List<Map<String, dynamic>>.from(widget.initialDirectoryPharmacies!);
+          }
+        });
       }
       final savedZip = context.read<CabinetProvider>().localZipCode;
       if (savedZip != null && savedZip.isNotEmpty) {
         _zipController.text = savedZip;
-        _loadLocalSponsoredPharmacies(savedZip);
+        _loadLocalPharmacies(savedZip);
       }
     });
   }
 
-  Future<void> _loadLocalSponsoredPharmacies(String? zip) async {
-    if (widget.initialLocalPharmacies != null) return;
+  Future<void> _loadLocalPharmacies(String? zip) async {
+    if (widget.initialLocalPharmacies != null || widget.initialDirectoryPharmacies != null) return;
     final clean = (zip ?? '').replaceAll(RegExp(r'[^0-9]'), '');
     if (clean.length != 5) {
-      if (mounted && _localSponsoredPharmacies.isNotEmpty) {
+      if (mounted &&
+          (_localSponsoredPharmacies.isNotEmpty ||
+              _localDirectoryPharmacies.isNotEmpty ||
+              _isLoadingLocalPharmacies)) {
         setState(() {
           _localSponsoredPharmacies = const [];
+          _localDirectoryPharmacies = const [];
+          _isLoadingLocalPharmacies = false;
           _loadedLocalZip = null;
         });
       }
@@ -168,11 +184,18 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     }
     if (_loadedLocalZip == clean) return;
     _loadedLocalZip = clean;
+    if (mounted) {
+      setState(() => _isLoadingLocalPharmacies = true);
+    }
     final provider = context.read<CabinetProvider>();
     final api = ApiService(baseUrl: provider.serverUrl);
-    final matches = await api.getLocalSponsoredPharmacies(clean);
+    final result = await api.getLocalPharmaciesForZip(clean);
     if (mounted && _loadedLocalZip == clean) {
-      setState(() => _localSponsoredPharmacies = matches);
+      setState(() {
+        _localSponsoredPharmacies = result.sponsored;
+        _localDirectoryPharmacies = result.localPharmacies;
+        _isLoadingLocalPharmacies = false;
+      });
     }
   }
 
@@ -229,27 +252,15 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     if (slug.length >= 3) {
       list.addAll([
         {
-          'id': 'singlecare',
-          'label': 'SingleCare Coupon',
-          'url': 'https://www.singlecare.com/prescription/$slug',
-          'price_hint': null,
-        },
-        {
           'id': 'goodrx',
           'label': 'GoodRx Coupon',
           'url': 'https://www.goodrx.com/$slug',
           'price_hint': null,
         },
         {
-          'id': 'optum_perks',
-          'label': 'Optum Perks Coupon',
-          'url': 'https://perks.optum.com/drug/$slug',
-          'price_hint': null,
-        },
-        {
-          'id': 'wellrx',
-          'label': 'WellRx Coupon',
-          'url': 'https://www.wellrx.com/prescriptions/$slug/',
+          'id': 'singlecare',
+          'label': 'SingleCare Coupon',
+          'url': 'https://www.singlecare.com/prescription/$slug',
           'price_hint': null,
         },
       ]);
@@ -989,15 +1000,13 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               ),
             const SizedBox(height: 6),
           ],
-          Link(
-            uri: Uri.parse('https://www.accessdata.fda.gov/scripts/drugshortages/default.cfm'),
-            target: LinkTarget.blank,
-            builder: (context, followLink) => TextButton.icon(
-              style: TextButton.styleFrom(padding: EdgeInsets.zero),
-              onPressed: followLink,
-              icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('View FDA Drug Shortages'),
+          TextButton.icon(
+            style: TextButton.styleFrom(padding: EdgeInsets.zero),
+            onPressed: () => ExternalNavService.openUrl(
+              'https://www.accessdata.fda.gov/scripts/drugshortages/default.cfm',
             ),
+            icon: const Icon(Icons.open_in_new, size: 16),
+            label: const Text('View FDA Drug Shortages'),
           ),
         ],
       ),
@@ -1081,10 +1090,10 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                     final digits = val.replaceAll(RegExp(r'[^0-9]'), '');
                     if (digits.length == 5) {
                       cabinet.setLocalZipCode(digits);
-                      _loadLocalSponsoredPharmacies(digits);
+                      _loadLocalPharmacies(digits);
                     } else if (digits.isEmpty && localZip != null) {
                       cabinet.setLocalZipCode(null);
-                      _loadLocalSponsoredPharmacies(null);
+                      _loadLocalPharmacies(null);
                     }
                   },
                 ),
@@ -1093,8 +1102,8 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               Expanded(
                 child: Text(
                   localZip != null
-                      ? 'Saved locally for $localZip • Never sent to our servers'
-                      : 'Optional • Stored on this device only to pre-fill local coupons',
+                      ? 'Showing real pharmacies in $localZip • ZIP only, zero PHI'
+                      : 'Enter your 5-digit ZIP to find real local pharmacies & local coupons',
                   style: TextStyle(
                     fontSize: 11.5,
                     color: theme.colorScheme.onSurfaceVariant,
@@ -1279,6 +1288,151 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               ),
           ],
 
+          // Real licensed local pharmacies in this ZIP from the federal CMS NPI Registry
+          if (localZip != null) ...[
+            if (_isLoadingLocalPharmacies)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Finding local pharmacies in $localZip...',
+                      style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              )
+            else if (_localDirectoryPharmacies.isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(
+                    Icons.local_pharmacy_outlined,
+                    size: 16,
+                    color: theme.brightness == Brightness.dark ? Colors.teal.shade200 : Colors.teal.shade700,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Local Pharmacies in $localZip',
+                      style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Text(
+                    'CMS NPI Registry',
+                    style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              for (final ph in _localDirectoryPharmacies)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        ph['name']?.toString() ?? 'Local Pharmacy',
+                        style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      if (ph['address'] != null && ph['address'].toString().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          ph['address'].toString(),
+                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          if (ph['phone'] != null && ph['phone'].toString().isNotEmpty)
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                final digits = ph['phone'].toString().replaceAll(RegExp(r'[^0-9+]'), '');
+                                ExternalNavService.openUrl('tel:$digits');
+                              },
+                              icon: const Icon(Icons.phone_outlined, size: 15),
+                              label: Text('Call ${ph['phone']}', style: const TextStyle(fontSize: 12.5)),
+                              style: OutlinedButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              ),
+                            ),
+                          if (ph['maps_url'] != null && ph['maps_url'].toString().isNotEmpty)
+                            OutlinedButton.icon(
+                              onPressed: () => ExternalNavService.openUrl(ph['maps_url'].toString()),
+                              icon: const Icon(Icons.directions_outlined, size: 15),
+                              label: const Text('Directions', style: TextStyle(fontSize: 12.5)),
+                              style: OutlinedButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () => ExternalNavService.openUrl(
+                      '${cabinet.serverUrl}/partners',
+                      sameTab: true,
+                    ),
+                    icon: const Icon(Icons.storefront_outlined, size: 15),
+                    label: const Text(
+                      'Own a pharmacy in this ZIP? Feature your cash prices →',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+              ),
+            ] else ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'No retail pharmacies listed in $localZip.',
+                        style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => ExternalNavService.openUrl(
+                        'https://www.google.com/maps/search/pharmacy+near+$localZip',
+                      ),
+                      icon: const Icon(Icons.map_outlined, size: 16),
+                      label: const Text('Search Maps'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+
           // Instant 30-day retail cash benchmark from CMS NADAC (when available)
           if (drug.pricing?.genericNadacUnitPrice != null) ...[
             Container(
@@ -1345,6 +1499,11 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
               ),
             ),
 
+          Text(
+            'Online & Cash Discount Options',
+            style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -1353,7 +1512,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                 final id = partner['id']?.toString() ?? '';
                 final baseLabel = partner['label']?.toString() ?? 'Pharmacy';
                 final priceHint = partner['price_hint']?.toString();
-                final supportsZip = id == 'singlecare' || id == 'goodrx' || id == 'optum_perks' || id == 'wellrx';
+                final supportsZip = id == 'singlecare' || id == 'goodrx';
                 final String label;
                 if (priceHint != null && priceHint.isNotEmpty) {
                   label = '$baseLabel ($priceHint)';
@@ -1368,8 +1527,6 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                   'amazon_pharmacy' => Icons.local_shipping_outlined,
                   'singlecare' => Icons.confirmation_number_outlined,
                   'goodrx' => Icons.savings_outlined,
-                  'optum_perks' => Icons.local_pharmacy_outlined,
-                  'wellrx' => Icons.discount_outlined,
                   _ => Icons.open_in_new,
                 };
                 return _buildPartnerButton(
@@ -1379,13 +1536,6 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                   uri: _buildClientPartnerUri(id, url, localZip),
                 );
               }),
-              if (localZip != null)
-                _buildPartnerButton(
-                  context,
-                  label: 'Pharmacies near $localZip',
-                  icon: Icons.map_outlined,
-                  uri: Uri.parse('https://www.google.com/maps/search/pharmacy+near+$localZip'),
-                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -1659,20 +1809,16 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
     required Uri uri,
     VoidCallback? onBeforeFollow,
   }) {
-    return Link(
-      uri: uri,
-      target: LinkTarget.blank,
-      builder: (context, followLink) => OutlinedButton.icon(
-        onPressed: () {
-          onBeforeFollow?.call();
-          followLink?.call();
-        },
-        icon: Icon(icon, size: 18),
-        label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(0, 48),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        ),
+    return OutlinedButton.icon(
+      onPressed: () {
+        onBeforeFollow?.call();
+        ExternalNavService.openUrl(uri.toString());
+      },
+      icon: Icon(icon, size: 18),
+      label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 48),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       ),
     );
   }

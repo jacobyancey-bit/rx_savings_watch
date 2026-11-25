@@ -156,27 +156,15 @@ function buildPublicCouponPartners(drug) {
 
   return [
     {
-      id: 'singlecare',
-      label: 'SingleCare Coupon',
-      url: applyPartnerTracking('singlecare', `https://www.singlecare.com/prescription/${slug}`),
-      price_hint: null,
-    },
-    {
       id: 'goodrx',
       label: 'GoodRx Coupon',
       url: applyPartnerTracking('goodrx', `https://www.goodrx.com/${slug}`),
       price_hint: null,
     },
     {
-      id: 'optum_perks',
-      label: 'Optum Perks Coupon',
-      url: `https://perks.optum.com/drug/${slug}`,
-      price_hint: null,
-    },
-    {
-      id: 'wellrx',
-      label: 'WellRx Coupon',
-      url: `https://www.wellrx.com/prescriptions/${slug}/`,
+      id: 'singlecare',
+      label: 'SingleCare Coupon',
+      url: applyPartnerTracking('singlecare', `https://www.singlecare.com/prescription/${slug}`),
       price_hint: null,
     },
   ];

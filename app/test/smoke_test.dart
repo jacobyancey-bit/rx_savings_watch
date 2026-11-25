@@ -481,6 +481,15 @@ void main() {
                   'services': ['Free Local Delivery', 'Blister Packs'],
                 },
               ],
+              initialDirectoryPharmacies: const [
+                {
+                  'npi': '1234567890',
+                  'name': 'CVS Pharmacy',
+                  'address': '3730 Belt Line Rd, Addison, TX 75001',
+                  'phone': '(214) 414-0026',
+                  'maps_url': 'https://www.google.com/maps/search/?api=1&query=CVS+Pharmacy+3730+Belt+Line+Rd',
+                },
+              ],
               initialPartners: const [
                 {
                   'id': 'cost_plus_drugs',
@@ -528,42 +537,26 @@ void main() {
       expect(find.text('SingleCare Coupon'), findsOneWidget);
       expect(find.text('GoodRx Coupon'), findsOneWidget);
 
-      // Enter a local-only 5-digit ZIP code -> enriches client-side coupon links + labels + Maps button
+      // Enter a local-only 5-digit ZIP code -> shows real local CMS NPI pharmacies + sponsored partner + clean coupons
       final zipField = find.widgetWithText(TextField, 'ZIP (optional)');
       expect(zipField, findsOneWidget);
       await tester.enterText(zipField, '75001');
       await tester.pumpAndSettle();
       expect(storage.localZip, '75001');
-      expect(find.textContaining('Saved locally for 75001'), findsOneWidget);
+      expect(find.textContaining('Showing real pharmacies in 75001'), findsOneWidget);
       expect(find.textContaining('Est. 30-day generic cash range near 75001'), findsOneWidget);
+      expect(find.text('Local Pharmacies in 75001'), findsOneWidget);
+      expect(find.text('CVS Pharmacy'), findsOneWidget);
+      expect(find.text('Call (214) 414-0026'), findsOneWidget);
+      expect(find.text('Directions'), findsOneWidget);
+      expect(find.text('Online & Cash Discount Options'), findsOneWidget);
       expect(find.text('SingleCare near 75001'), findsOneWidget);
       expect(find.text('GoodRx near 75001'), findsOneWidget);
-      expect(find.text('Pharmacies near 75001'), findsOneWidget);
       expect(find.text('Main Street Independent Pharmacy'), findsOneWidget);
       expect(find.text('Sponsored Local Partner'), findsOneWidget);
       expect(find.text('Most 30-day generics \$10 cash'), findsOneWidget);
       expect(find.text('Free Local Delivery'), findsOneWidget);
       expect(find.text('Blister Packs'), findsOneWidget);
-
-      // Partner buttons are rendered via native url_launcher Link(target: LinkTarget.blank) with local ZIP
-      final links = tester.widgetList<Link>(find.byType(Link)).toList();
-      expect(links.length, greaterThanOrEqualTo(4));
-      expect(
-        links.any((l) => l.uri?.host == 'www.costplusdrugs.com' && l.target == LinkTarget.blank),
-        isTrue,
-      );
-      expect(
-        links.any((l) => l.uri?.host == 'pharmacy.amazon.com' && l.target == LinkTarget.blank),
-        isTrue,
-      );
-      expect(
-        links.any((l) => l.uri?.host == 'www.singlecare.com' && l.uri?.queryParameters['zip'] == '75001'),
-        isTrue,
-      );
-      expect(
-        links.any((l) => l.uri?.host == 'www.goodrx.com' && l.uri?.queryParameters['location'] == '75001'),
-        isTrue,
-      );
     },
   );
 }

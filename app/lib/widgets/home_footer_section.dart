@@ -10,7 +10,9 @@ import 'review_sheet.dart';
 /// Keeps the main screen uncluttered while keeping essential disclaimers visible
 /// and giving one-tap access to full FAQs, Contact info, and Disclaimers.
 class HomeFooterSection extends StatelessWidget {
-  const HomeFooterSection({super.key});
+  final bool pinned;
+
+  const HomeFooterSection({super.key, this.pinned = false});
 
   void _showFaqsSheet(BuildContext context) {
     final theme = Theme.of(context);
@@ -319,6 +321,79 @@ class HomeFooterSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final linksRow = Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 4,
+      runSpacing: 2,
+      children: [
+        _footerLink(context, 'FAQs', () => _showFaqsSheet(context)),
+        Text('•', style: TextStyle(color: muted, fontSize: 12)),
+        _footerLink(context, 'Review', () => ReviewSheet.show(context)),
+        Text('•', style: TextStyle(color: muted, fontSize: 12)),
+        _footerLink(context, 'Contact', () => _showContactSheet(context)),
+        Text('•', style: TextStyle(color: muted, fontSize: 12)),
+        _footerLink(context, 'Disclaimers', () => _showDisclaimersSheet(context)),
+        Text('•', style: TextStyle(color: muted, fontSize: 12)),
+        _footerLink(
+          context,
+          'Health Data Notice',
+          () => PrivacyPromiseSheet.show(context),
+        ),
+        Text('•', style: TextStyle(color: muted, fontSize: 12)),
+        _footerLink(
+          context,
+          'Privacy',
+          () => LegalPolicySheet.showPrivacyPolicy(context),
+        ),
+        Text('•', style: TextStyle(color: muted, fontSize: 12)),
+        _footerLink(
+          context,
+          'Terms',
+          () => LegalPolicySheet.showTermsOfService(context),
+        ),
+        Text('•', style: TextStyle(color: muted, fontSize: 12)),
+        _footerLink(
+          context,
+          'For Pharmacies & Clinics',
+          () => ExternalNavService.openUrl(
+            'https://rx.dangling-dice-studios.com/partners',
+            sameTab: true,
+          ),
+        ),
+      ],
+    );
+
+    if (pinned) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF131C1B) : const Color(0xFFFAFCFC),
+          border: Border(
+            top: BorderSide(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+            ),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            linksRow,
+            const SizedBox(height: 3),
+            Text(
+              'Informational only — not medical advice or insurance. © 2026 Dangling Dice Studios™ • Public FDA, RxNorm & CMS Data',
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: muted),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
@@ -326,48 +401,7 @@ class HomeFooterSection extends StatelessWidget {
         children: [
           const Divider(height: 1),
           const SizedBox(height: 10),
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 4,
-            runSpacing: 2,
-            children: [
-              _footerLink(context, 'FAQs', () => _showFaqsSheet(context)),
-              Text('•', style: TextStyle(color: muted, fontSize: 12)),
-              _footerLink(context, 'Review', () => ReviewSheet.show(context)),
-              Text('•', style: TextStyle(color: muted, fontSize: 12)),
-              _footerLink(context, 'Contact', () => _showContactSheet(context)),
-              Text('•', style: TextStyle(color: muted, fontSize: 12)),
-              _footerLink(context, 'Disclaimers', () => _showDisclaimersSheet(context)),
-              Text('•', style: TextStyle(color: muted, fontSize: 12)),
-              _footerLink(
-                context,
-                'Health Data Notice',
-                () => PrivacyPromiseSheet.show(context),
-              ),
-              Text('•', style: TextStyle(color: muted, fontSize: 12)),
-              _footerLink(
-                context,
-                'Privacy',
-                () => LegalPolicySheet.showPrivacyPolicy(context),
-              ),
-              Text('•', style: TextStyle(color: muted, fontSize: 12)),
-              _footerLink(
-                context,
-                'Terms',
-                () => LegalPolicySheet.showTermsOfService(context),
-              ),
-              Text('•', style: TextStyle(color: muted, fontSize: 12)),
-              _footerLink(
-                context,
-                'For Pharmacies & Clinics',
-                () => ExternalNavService.openUrl(
-                  'https://rx.dangling-dice-studios.com/partners',
-                  sameTab: true,
-                ),
-              ),
-            ],
-          ),
+          linksRow,
           const SizedBox(height: 6),
           Text(
             'Informational only — not medical advice. Verify with your doctor or pharmacist. '

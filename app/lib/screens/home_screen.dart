@@ -588,7 +588,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (cabinet.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    return RefreshIndicator(
+    final scrollableContent = RefreshIndicator(
               onRefresh: () => cabinet.syncCabinet(),
               child: CustomScrollView(
                 slivers: [
@@ -868,13 +868,29 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ],
 
-                  // FAQs, Contact Info & Important Disclaimers
-                  const SliverToBoxAdapter(
-                    child: HomeFooterSection(),
-                  ),
+                  // FAQs, Contact Info & Important Disclaimers (inline on mobile; pinned to bottom on desktop)
+                  if (!isDesktop)
+                    const SliverToBoxAdapter(
+                      child: HomeFooterSection(),
+                    )
+                  else
+                    const SliverToBoxAdapter(
+                      child: SizedBox(height: 24),
+                    ),
                 ],
               ),
             );
+
+    if (isDesktop) {
+      return Column(
+        children: [
+          Expanded(child: scrollableContent),
+          const HomeFooterSection(pinned: true),
+        ],
+      );
+    }
+
+    return scrollableContent;
   }
 
   Widget _buildDesktopHeader(BuildContext context, CabinetProvider cabinet, ThemeData theme) {

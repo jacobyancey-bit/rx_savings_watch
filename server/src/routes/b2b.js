@@ -289,41 +289,41 @@ function renderPartnersPageHtml(nonce = "") {
   <title>For Independent Pharmacies &amp; Clinics — Rx Savings Watch B2B Partner Program</title>
   <meta name="description" content="Reach local cash-pay patients right when they refill. Flat-rate ZIP sponsorship (capped at 2 exclusive pharmacies per ZIP) with public cash pricing, service badges, counter QR flyers, and zero-PHI monthly ROI reports.">
   <link rel="canonical" href="${SITE_ORIGIN}/partners">
-  <meta name="theme-color" content="#057873">
+  <meta name="theme-color" content="#0F5132">
   <style>
-    :root { --teal: #057873; --teal-dark: #035a56; --bg: #f6f9f9; --card: #ffffff; --text: #142221; --muted: #546665; --border: #dce6e5; }
+    :root { --teal: #0F5132; --teal-dark: #0A3622; --bg: #FAF9F6; --card: #FFFFFF; --text: #11181C; --muted: #59636E; --border: #E5E4E0; --subtle: #F3F2EE; --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.55; }
-    header { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 20px; position: sticky; top: 0; z-index: 10; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+    header { background: var(--bg); border-bottom: 1px solid var(--border); padding: 14px 20px; position: sticky; top: 0; z-index: 10; }
     .nav { max-width: 1080px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-    .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-weight: 700; font-size: 18px; }
-    .brand-badge { background: var(--teal); color: #fff; padding: 5px 9px; border-radius: 8px; font-size: 13px; }
-    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--teal); color: #fff !important; padding: 11px 18px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 14px; border: 0; cursor: pointer; }
-    .btn:hover { background: var(--teal-dark); }
-    .btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: #fff; color: var(--teal-dark) !important; border: 1px solid #b8cfcd; padding: 10px 16px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 14px; cursor: pointer; }
-    .btn-outline:hover { background: #edf5f4; }
-    main { max-width: 1080px; margin: 0 auto; padding: 32px 20px 64px; }
-    .hero { background: linear-gradient(135deg, #057873, #034e4a); color: #fff; border-radius: 20px; padding: 36px 28px; margin-bottom: 24px; }
-    .hero h1 { margin: 8px 0 10px; font-size: 32px; line-height: 1.2; }
-    .hero p { margin: 0 0 20px; color: #d8f2f0; max-width: 740px; font-size: 16px; }
-    .pill { display: inline-block; background: rgba(255,255,255,0.16); padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: 0.4px; }
+    .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-weight: 700; font-size: 16px; letter-spacing: -0.02em; }
+    .brand-badge { background: var(--teal); color: #fff; font-family: var(--mono); padding: 4px 8px; border-radius: 5px; font-size: 12px; letter-spacing: 0.04em; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--teal); color: #fff !important; padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; border: 1px solid var(--teal); cursor: pointer; }
+    .btn:hover { background: var(--teal-dark); border-color: var(--teal-dark); }
+    .btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--card); color: var(--text) !important; border: 1px solid #757D7A; padding: 10px 16px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; cursor: pointer; }
+    .btn-outline:hover { background: var(--subtle); }
+    main { max-width: 1080px; margin: 0 auto; padding: 36px 20px 64px; }
+    .hero { background: var(--card); color: var(--text); border: 1px solid var(--border); border-left: 4px solid var(--teal); border-radius: 8px; padding: 32px 28px; margin-bottom: 28px; }
+    .hero h1 { margin: 10px 0 10px; font-size: 30px; line-height: 1.2; letter-spacing: -0.025em; }
+    .hero p { margin: 0 0 20px; color: var(--muted); max-width: 740px; font-size: 15.5px; }
+    .pill { display: inline-block; font-family: var(--mono); background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; }
     .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-bottom: 24px; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; }
-    .price { font-size: 28px; font-weight: 800; color: var(--teal-dark); margin: 8px 0; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 22px; display: flex; flex-direction: column; }
+    .price { font-size: 28px; font-weight: 800; color: var(--text); letter-spacing: -0.02em; margin: 8px 0; }
     .muted { color: var(--muted); font-size: 14px; }
     ul { padding-left: 18px; margin: 10px 0 18px; flex: 1; }
     li { margin-bottom: 6px; font-size: 14px; }
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
     label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
-    input, select { width: 100%; padding: 10px 12px; border: 1px solid #c5d4d3; border-radius: 10px; font-size: 14px; font-family: inherit; background: #fff; }
+    input, select { width: 100%; padding: 10px 12px; border: 1px solid #C5C7C4; border-radius: 6px; font-size: 14px; font-family: inherit; background: #fff; }
     input:focus, select:focus { outline: 2px solid var(--teal); border-color: var(--teal); }
     .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
-    .check-pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid #c5d4d3; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer; background: #fff; margin: 0; }
+    .check-pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--subtle); margin: 0; }
     .check-pill input { width: auto; margin: 0; }
-    .status-box { margin-top: 14px; padding: 12px 14px; border-radius: 10px; font-size: 14px; display: none; }
-    .status-ok { background: #e3f5ec; color: #0f6b43; border: 1px solid #9ad6b8; }
-    .status-err { background: #fdecec; color: #9c1c1c; border: 1px solid #f2b4b4; }
-    .banner { padding: 14px 18px; border-radius: 12px; margin-bottom: 18px; font-size: 14px; font-weight: 600; display: none; }
+    .status-box { margin-top: 14px; padding: 12px 14px; border-radius: 6px; font-size: 14px; display: none; }
+    .status-ok { background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; }
+    .status-err { background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; }
+    .banner { padding: 14px 18px; border-radius: 6px; margin-bottom: 18px; font-size: 14px; font-weight: 600; display: none; }
     footer { max-width: 1080px; margin: 0 auto; padding: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12.5px; text-align: center; }
   </style>
 </head>
@@ -348,7 +348,7 @@ function renderPartnersPageHtml(nonce = "") {
       <span class="pill">LIMITED TO 2 EXCLUSIVE PARTNERS PER ZIP • ZERO HIPAA FRICTION</span>
       <h1>Win Back Local Cash-Pay Refills Without Big-Chain Software Costs</h1>
       <p>Showcase your public cash-price menu, highlight services chains can't match (free delivery, compounding, blister packs), hand customers a co-branded QR refill flyer, and receive monthly zero-PHI click &amp; impression reports.</p>
-      <a class="btn" style="background:#fff;color:#035a56 !important;" href="#apply">Claim Your ZIP Codes</a>
+      <a class="btn" href="#apply">Claim Your ZIP Codes</a>
     </section>
 
     <section class="grid-3">

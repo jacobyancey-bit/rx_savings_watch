@@ -53,35 +53,35 @@ function renderLayout({ title, description, canonicalUrl, jsonLd, bodyHtml }) {
   <meta property="og:site_name" content="Rx Savings Watch">
   <meta property="og:title" content="${escapeHtml(title)}">
   <meta property="og:description" content="${escapeHtml(description)}">
-  <meta name="theme-color" content="#057873">
+  <meta name="theme-color" content="#0F5132">
   ${ldScript}
   <style>
-    :root { --teal: #057873; --teal-dark: #035a56; --bg: #f6f9f9; --card: #ffffff; --text: #142221; --muted: #546665; --border: #dce6e5; }
+    :root { --teal: #0F5132; --teal-dark: #0A3622; --bg: #FAF9F6; --card: #FFFFFF; --text: #11181C; --muted: #59636E; --border: #E5E4E0; --subtle: #F3F2EE; --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.55; }
-    header { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 20px; position: sticky; top: 0; z-index: 10; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+    header { background: var(--bg); border-bottom: 1px solid var(--border); padding: 14px 20px; position: sticky; top: 0; z-index: 10; }
     .nav { max-width: 1040px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-    .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-weight: 700; font-size: 18px; }
-    .brand-badge { background: var(--teal); color: #fff; padding: 5px 9px; border-radius: 8px; font-size: 13px; }
+    .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-weight: 700; font-size: 16px; letter-spacing: -0.02em; }
+    .brand-badge { background: var(--teal); color: #fff; font-family: var(--mono); padding: 4px 8px; border-radius: 5px; font-size: 12px; letter-spacing: 0.04em; }
     .nav-links { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
-    .nav-links a { text-decoration: none; color: var(--teal-dark); font-weight: 600; font-size: 14px; }
-    .btn { display: inline-flex; align-items: center; gap: 8px; background: var(--teal); color: #fff !important; padding: 10px 16px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 14px; }
+    .nav-links a { text-decoration: none; color: var(--teal); font-weight: 600; font-size: 14px; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; background: var(--teal); color: #fff !important; padding: 9px 16px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; }
     .btn:hover { background: var(--teal-dark); }
-    .btn-outline { display: inline-flex; align-items: center; gap: 8px; background: #fff; color: var(--teal-dark) !important; border: 1px solid #b8cfcd; padding: 10px 14px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 14px; }
-    .btn-outline:hover { background: #edf5f4; }
+    .btn-outline { display: inline-flex; align-items: center; gap: 8px; background: var(--card); color: var(--text) !important; border: 1px solid #757D7A; padding: 9px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; }
+    .btn-outline:hover { background: var(--subtle); }
     main { max-width: 1040px; margin: 0 auto; padding: 28px 20px 56px; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; margin-bottom: 18px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 22px; margin-bottom: 18px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
-    .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
-    .pill-green { background: #e3f5ec; color: #0f6b43; }
-    .pill-slate { background: #e8efef; color: #364f4e; }
-    .pill-amber { background: #fff3db; color: #9a5200; }
-    h1 { margin: 8px 0 6px; font-size: 30px; line-height: 1.2; }
-    h2 { margin: 0 0 10px; font-size: 18px; }
+    .pill { display: inline-block; font-family: var(--mono); padding: 3px 9px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+    .pill-green { background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; }
+    .pill-slate { background: var(--subtle); color: #364148; border: 1px solid var(--border); }
+    .pill-amber { background: #FEFCE8; color: #854D0E; border: 1px solid #FDE047; }
+    h1 { margin: 8px 0 6px; font-size: 28px; line-height: 1.2; letter-spacing: -0.02em; }
+    h2 { margin: 0 0 10px; font-size: 17px; letter-spacing: -0.01em; }
     .muted { color: var(--muted); font-size: 14px; }
     .btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
     .dir-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-    .dir-item { display: block; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; text-decoration: none; color: var(--text); }
+    .dir-item { display: block; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; text-decoration: none; color: var(--text); }
     .dir-item:hover { border-color: var(--teal); }
     footer { max-width: 1040px; margin: 0 auto; padding: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12.5px; text-align: center; }
   </style>

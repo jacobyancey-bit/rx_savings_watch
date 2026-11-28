@@ -1,6 +1,6 @@
 const express = require('express');
 const config = require('../config');
-const { evaluateSubstitutionStatus } = require('../detector/rules');
+const { evaluateSubstitutionStatus, calculateMatchedSavings } = require('../detector/rules');
 const { getDataFreshness } = require('../ingestion');
 
 /**
@@ -156,24 +156,12 @@ function createCheckUpdatesRouter(db) {
       }
       if (activeShortages.length > 0) sourceSet.add('FDA Drug Shortages');
 
-      // Calculate latest generic and brand prices (reject <= 0 anomalies)
-      let latestGenericPrice = null;
-      let brandPrice = null;
-
-      for (const m of marketRows) {
-        if (m.nadac_per_unit && m.nadac_per_unit > 0) {
-          if (isBrandRow(m)) {
-            brandPrice = m.nadac_per_unit;
-          } else {
-            latestGenericPrice = m.nadac_per_unit;
-          }
-        }
-      }
-
-      let estimatedSavingsPct = null;
-      if (brandPrice && latestGenericPrice && brandPrice > 0) {
-        estimatedSavingsPct = Math.max(0, Number((((brandPrice - latestGenericPrice) / brandPrice) * 100).toFixed(1)));
-      }
+      // Strength-matched brand vs generic NADAC comparison (same strength, form & pricing unit only).
+      // Unmatched rows never produce a savings % so mismatched strengths cannot inflate claims.
+      const matchedSavings = calculateMatchedSavings(marketRows, { isBrand: isBrandRow });
+      const brandPrice = matchedSavings.brandPrice;
+      const latestGenericPrice = matchedSavings.genericPrice;
+      const estimatedSavingsPct = matchedSavings.savingsPct;
 
       const formattedAlerts = alertsSince.map(a => ({
         id: a.id,

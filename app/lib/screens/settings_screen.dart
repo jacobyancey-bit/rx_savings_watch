@@ -161,8 +161,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Your medication cabinet is stored strictly on this device (or in this browser on the web). '
-                  'When checking for generic updates, the app sends only anonymized drug concept IDs (RXCUIs) mixed with decoy lookups. '
-                  'No names, emails, IP addresses, or personal health identifiers are ever tracked or stored.\n\n'
+                  'When checking for generic updates, the app sends the public drug codes (RxCUIs) in your cabinet plus a few decoy lookups. '
+                  'No names, emails, accounts, or device IDs are sent, and Rx Savings Watch does not store IP addresses with your lookups.\n\n'
                   'Privacy Trade-Off: Because there is no account or cloud backup, your list stays saved when you close the app or browser, '
                   'but it will not sync between different devices, and uninstalling the app or clearing browser site data will erase it.',
                   style: TextStyle(fontSize: 13, color: Colors.teal.shade900, height: 1.45),
@@ -293,7 +293,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Node.js 22 server endpoint providing official FDA, CMS NADAC, and RxNorm feeds.',
+              'Node.js 22 server endpoint providing public FDA, CMS NADAC, and RxNorm datasets.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 12),
@@ -420,6 +420,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => LegalPolicySheet.showMedicalDisclaimer(context),
                 ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.account_balance_outlined),
+                  title: const Text('Government Data Sources & Disclaimer'),
+                  subtitle: const Text('Not a government app • Official .gov source links'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => LegalPolicySheet.showGovernmentDataSources(context),
+                ),
               ],
             ),
           ),
@@ -443,7 +451,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Support Ad-Free Software (Optional)',
+                          'Support Independent Software (Optional)',
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
@@ -454,7 +462,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Rx Savings Watch is 100% free, private, and ad-free. If it helped lower your prescription costs and you would like to leave an optional tip for our independent studio, thank you!',
+                    'Rx Savings Watch is 100% free, with no ad networks or trackers. If it helped lower your prescription costs and you would like to leave an optional tip for our independent studio, thank you!',
                     style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
                   ),
                   const SizedBox(height: 12),

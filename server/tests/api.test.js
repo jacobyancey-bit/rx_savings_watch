@@ -124,14 +124,23 @@ test('API: POST /api/check-updates anonymous status check and alert filtering', 
   assert.equal(eliquis.commercial_generic_available, false);
   assert.equal(eliquis.new_alerts_count, 0, 'Eliquis must have zero alerts');
 
-  // Request 2: Checked AFTER launch date (e.g. 2026-01-01) -> 0 new alerts
+  // Regression: a user whose last check was AFTER the historical market date but BEFORE
+  // detection must still receive the alert (detected_at = detection time, not market date).
+  const resAfterMarketDate = await makeRequest(app, 'POST', '/api/check-updates', {
+    rxcuis: ['855333'],
+    last_checked: '2025-06-01T00:00:00Z'
+  });
+  assert.equal(resAfterMarketDate.statusCode, 200);
+  assert.ok(resAfterMarketDate.body.updates_found >= 1, 'Alert detected after last check must be reported as new');
+
+  // Request 2: Checked AFTER detection -> 0 new alerts
   const res2 = await makeRequest(app, 'POST', '/api/check-updates', {
     rxcuis: ['855333'],
-    last_checked: '2026-01-01T00:00:00Z'
+    last_checked: new Date(Date.now() + 60_000).toISOString()
   });
 
   assert.equal(res2.statusCode, 200);
-  assert.equal(res2.body.updates_found, 0, 'No new alerts should be returned after launch date');
+  assert.equal(res2.body.updates_found, 0, 'No new alerts should be returned after detection');
   assert.equal(res2.body.drugs[0].commercial_generic_available, true, 'Snapshot still reflects available generic');
 });
 
@@ -146,8 +155,10 @@ test('API: GET /api/drugs supports search query and pagination', async () => {
   assert.equal(resAll.statusCode, 200);
   assert.ok(resAll.body.total >= 5);
 
-  // 2. Search query 'vyvanse'
-  const resVyvanse = await makeRequest(app, 'GET', '/api/drugs?q=vyvanse');
+  // 2. Search query 'vyvanse' (POST only, so drug names never appear in URLs)
+  const resGetQuery = await makeRequest(app, 'GET', '/api/drugs?q=vyvanse');
+  assert.equal(resGetQuery.statusCode, 400, 'GET search queries must be rejected');
+  const resVyvanse = await makeRequest(app, 'POST', '/api/drugs/search', { q: 'vyvanse', live: false });
   assert.equal(resVyvanse.statusCode, 200);
   assert.equal(resVyvanse.body.drugs.length, 1);
   assert.equal(resVyvanse.body.drugs[0].brand_name, 'Vyvanse');

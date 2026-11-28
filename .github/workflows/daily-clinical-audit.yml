@@ -30,6 +30,8 @@ jobs:
         run: npm --prefix server ci
 
       - name: Run server unit tests
+        env:
+          NODE_ENV: test
         run: npm --prefix server test
 
       - name: Run 49-drug Golden Clinical Regression Suite + Full Live Catalog Audit

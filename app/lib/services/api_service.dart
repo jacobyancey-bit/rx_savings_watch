@@ -7,7 +7,8 @@ import '../models/drug.dart';
 class ApiService {
   final String _configuredBaseUrl;
 
-  // Common maintenance drug RXCUIs used for k-anonymity query chaffing (differential privacy)
+  // Common maintenance drug RXCUIs added as decoys to cabinet checks (basic query chaffing;
+  // this is obfuscation, not a formal k-anonymity or differential-privacy guarantee)
   static const List<String> _chaffRxcuis = [
     '197361', // amlodipine
     '6809',   // metformin
@@ -82,7 +83,7 @@ class ApiService {
     return list.map((json) => Drug.fromJson(json as Map<String, dynamic>)).toList();
   }
 
-  /// Anonymous check-updates call with k-anonymity chaffing (differential privacy)
+  /// Anonymous check-updates call with decoy-RxCUI query chaffing
   /// Injects dummy maintenance RXCUIs so network observers cannot infer actual prescriptions,
   /// then strips the dummy items before returning.
   Future<Map<String, dynamic>> checkUpdates({
@@ -212,9 +213,10 @@ class ApiService {
     try {
       final response = await http
           .post(
-            Uri.parse('$baseUrl/api/drugs/$rxcui/flag'),
+            // RxCUI travels in the POST body so it never appears in URL access logs
+            Uri.parse('$baseUrl/api/drugs/flag'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'issue_type': issueType}),
+            body: jsonEncode({'rxcui': rxcui, 'issue_type': issueType}),
           )
           .timeout(const Duration(seconds: 10));
       return response.statusCode == 201;

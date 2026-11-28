@@ -36,6 +36,7 @@ class GenericLaunchDetector {
    * @param {object} [options]
    * @param {string} [options.asOfDate] Simulated current date (YYYY-MM-DD)
    * @param {boolean} [options.persistAlert=true] Whether to save alert to alert_events table
+   * @param {string} [options.detectedAt] Explicit detection timestamp to persist (e.g. preserved across refreshes)
    * @returns {object} Detection evaluation result
    */
   evaluateDrug(drug, options = {}) {
@@ -88,6 +89,11 @@ class GenericLaunchDetector {
       if (persistAlert) {
         const existingAlerts = this.getExistingAlertsStmt.all(drug.id);
         if (existingAlerts.length === 0) {
+          // detected_at records WHEN this launch was detected (not the historical market date) so
+          // existing users whose last_checked predates detection actually receive it as a new alert.
+          // Simulated backtests (asOfDate) stamp the simulated date; callers may pass an explicit detectedAt.
+          const detectedAt = options.detectedAt ||
+            (options.asOfDate ? asOfDate : new Date().toISOString());
           const signalDetails = JSON.stringify({
             signal_1_regulatory: regSignal.signal,
             signal_2_commercial: commSignal.signal,
@@ -95,7 +101,8 @@ class GenericLaunchDetector {
             brand_price: savings.brandPrice,
             generic_price: commSignal.signal.nadac_per_unit,
             savings_pct: savings.savingsPct,
-            evaluation_as_of: asOfDate
+            evaluation_as_of: asOfDate,
+            earliest_commercial_date: commercialDate
           });
 
           this.insertAlertStmt.run(
@@ -103,7 +110,7 @@ class GenericLaunchDetector {
             signalSummary,
             signalDetails,
             confidenceScore,
-            commercialDate
+            detectedAt
           );
           alertCreated = true;
         }

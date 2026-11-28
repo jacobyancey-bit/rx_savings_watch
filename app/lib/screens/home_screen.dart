@@ -343,7 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                               ),
                               Text(
-                                'Official FDA • Zero PII',
+                                'Public FDA Data • No Account',
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   color: theme.colorScheme.onSurfaceVariant,
@@ -612,7 +612,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: _buildHeroBanner(context, cabinet),
                     ),
 
-                    // Persistent "No Personal Data Collected" trust indicator (mobile)
+                    // Persistent "No Account Needed" privacy trust indicator (mobile)
                     const SliverToBoxAdapter(
                       child: PrivacyTrustBanner(),
                     ),
@@ -1119,7 +1119,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                'Stored locally • Zero tracking',
+                                'Stored locally • No ad tracking',
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,

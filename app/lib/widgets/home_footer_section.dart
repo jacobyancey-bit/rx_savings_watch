@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/link.dart';
 import '../config/partner_links.dart';
@@ -64,8 +65,9 @@ class HomeFooterSection extends StatelessWidget {
               theme,
               'How does the optional ZIP code work? Do you track my location?',
               'No—we never ask for GPS location or use geofencing. Entering a 5-digit ZIP code on a medication page is completely '
-                  'optional, stays strictly on your own device (never sent to our servers), and is only used to pre-fill local '
-                  'retail pharmacy coupon links when you click them.',
+                  'optional and is saved on your own device. To show licensed pharmacies near you, the app sends ONLY that 5-digit ZIP '
+                  '(never your medication) to our server, which looks it up in the public CMS NPI Registry. The ZIP is not stored or '
+                  'linked to you.',
             ),
             const Divider(height: 1),
             _buildFaqTile(
@@ -86,7 +88,7 @@ class HomeFooterSection extends StatelessWidget {
             _buildFaqTile(
               theme,
               'What if my prescription or vitamin is not in the initial catalog?',
-              'Just type the medication name in Search—if it is not already in the top catalog, tap "Search Official FDA Databases" '
+              'Just type the medication name in Search—if it is not already in the top catalog, tap "Search Public FDA Databases" '
                   'to look it up live from federal FDA and NLM RxNorm records (minor spelling typos are handled automatically). '
                   'For vitamins or over-the-counter items, tap "Add OTC / Supplement" to track them privately on your device.',
             ),
@@ -102,9 +104,10 @@ class HomeFooterSection extends StatelessWidget {
             _buildFaqTile(
               theme,
               'How do you protect my medical privacy?',
-              'We collect zero personal data: no accounts, no cookies, no ad SDKs, and no behavioral analytics. '
-                  'Searches and partner lookups use POST bodies so drug names never appear in URL logs, update checks mix in decoy '
-                  'common medications (query chaffing), and you can erase all local data anytime in Settings.',
+              'No accounts, no cookies, no ad SDKs, and no behavioral analytics. Your medication list is saved on your device. '
+                  'To check for generic and shortage updates, the app sends public drug codes (RxCUIs) to our server without any '
+                  'name, account, or device ID; these lookups use POST bodies so drug names never appear in URL logs, and update '
+                  'checks add a few decoy common medications. You can erase all local data anytime in Settings.',
             ),
             const Divider(height: 1),
             _buildFaqTile(
@@ -118,7 +121,7 @@ class HomeFooterSection extends StatelessWidget {
             _buildFaqTile(
               theme,
               'Is Rx Savings Watch really free? How is it supported?',
-              'Yes—100% free, with zero ads and zero data selling. Rx Savings Watch is built independently by '
+              'Yes—100% free, with no ad networks, no trackers, and no data selling (only clearly labeled sponsored local pharmacies). Rx Savings Watch is built independently by '
                   'Dangling Dice Studios™ and supported by optional referral fees on pharmacy links (at no cost to you) '
                   'and an optional tip jar in Settings.',
             ),
@@ -190,6 +193,13 @@ class HomeFooterSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildSheetHeader(ctx, Icons.info_outline, 'Important Disclaimers'),
+              const SizedBox(height: 12),
+              _buildDisclaimerParagraph(
+                'Non-Government Disclaimer: ',
+                'Rx Savings Watch is an independent application by Dangling Dice Studios™ and does NOT represent a government entity. '
+                    'It is not affiliated with or endorsed by the FDA, CMS, NIH, or HHS.',
+                muted,
+              ),
               const SizedBox(height: 12),
               _buildDisclaimerParagraph(
                 'Medical Disclaimer: ',
@@ -300,17 +310,30 @@ class HomeFooterSection extends StatelessWidget {
   }
 
   Widget _footerLink(BuildContext context, String label, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-            color: Theme.of(context).colorScheme.primary,
+    // Minimum 48x48 dp touch target (Android accessibility / WCAG 2.5.5) for every legal link.
+    return Semantics(
+      link: true,
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Center(
+              widthFactor: 1,
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.primary,
+                  decoration: TextDecoration.underline,
+                  decorationColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -339,6 +362,12 @@ class HomeFooterSection extends StatelessWidget {
         Text('•', style: TextStyle(color: muted, fontSize: 12)),
         _footerLink(
           context,
+          'Data Sources',
+          () => LegalPolicySheet.showGovernmentDataSources(context),
+        ),
+        Text('•', style: TextStyle(color: muted, fontSize: 12)),
+        _footerLink(
+          context,
           'Health Data Notice',
           () => PrivacyPromiseSheet.show(context),
         ),
@@ -354,15 +383,19 @@ class HomeFooterSection extends StatelessWidget {
           'Terms',
           () => LegalPolicySheet.showTermsOfService(context),
         ),
-        Text('•', style: TextStyle(color: muted, fontSize: 12)),
-        _footerLink(
-          context,
-          'For Pharmacies & Clinics',
-          () => ExternalNavService.openUrl(
-            'https://rx.dangling-dice-studios.com/partners',
-            sameTab: true,
+        // B2B partner sign-up (with Stripe checkout) is offered on the website only, never
+        // inside the Android app, to keep the Play build clear of any external payment flows.
+        if (kIsWeb) ...[
+          Text('•', style: TextStyle(color: muted, fontSize: 12)),
+          _footerLink(
+            context,
+            'For Pharmacies & Clinics',
+            () => ExternalNavService.openUrl(
+              'https://rx.dangling-dice-studios.com/partners',
+              sameTab: true,
+            ),
           ),
-        ),
+        ],
       ],
     );
 
@@ -384,11 +417,11 @@ class HomeFooterSection extends StatelessWidget {
             linksRow,
             const SizedBox(height: 3),
             Text(
-              'Informational only — not medical advice or insurance. © 2026 Dangling Dice Studios™ • Public FDA, RxNorm & CMS Data',
+              'Independent app — not affiliated with FDA, CMS, NIH, or any government entity. Informational only. © 2026 Dangling Dice Studios™',
               textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, color: muted),
+              // Never truncate the non-government disclaimer, even at large text scales.
+              softWrap: true,
+              style: TextStyle(fontSize: 12, color: muted),
             ),
           ],
         ),
@@ -404,16 +437,16 @@ class HomeFooterSection extends StatelessWidget {
           linksRow,
           const SizedBox(height: 6),
           Text(
-            'Informational only — not medical advice. Verify with your doctor or pharmacist. '
+            'Not a government app (not affiliated with FDA, CMS, or NIH). Informational only — not medical advice. '
             'As an Amazon Associate I earn from qualifying purchases.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: muted, height: 1.35),
+            style: TextStyle(fontSize: 12, color: muted, height: 1.35),
           ),
           const SizedBox(height: 4),
           Text(
-            '© 2026 Dangling Dice Studios™ • Official FDA, RxNorm & CMS Data',
+            '© 2026 Dangling Dice Studios™ • Public .gov Data Sources',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: muted),
+            style: TextStyle(fontSize: 12, color: muted),
           ),
         ],
       ),

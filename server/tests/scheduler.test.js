@@ -29,7 +29,8 @@ test('Scheduler: start and stop daemon timers', () => {
 
   const scheduler = new IngestionScheduler(db, {
     shortagesIntervalMs: 100000,
-    nadacIntervalMs: 500000
+    nadacIntervalMs: 500000,
+    enableRollingAudit: true // explicit so the assertion is independent of NODE_ENV
   });
 
   assert.equal(scheduler.isRunning, false);

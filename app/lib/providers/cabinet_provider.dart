@@ -191,7 +191,8 @@ class CabinetProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Saves an optional 5-digit ZIP code strictly on-device (never sent to server).
+  /// Saves an optional 5-digit ZIP code on-device. Only the bare ZIP (never a drug) is sent
+  /// to POST /api/b2b/local to look up licensed pharmacies via the public CMS NPI Registry.
   Future<void> setLocalZipCode(String? zip) async {
     final clean = (zip ?? '').replaceAll(RegExp(r'[^0-9]'), '');
     _localZipCode = clean.length == 5 ? clean : null;

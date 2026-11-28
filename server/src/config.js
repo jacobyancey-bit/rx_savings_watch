@@ -22,8 +22,8 @@ module.exports = {
     'https://rx.dangling-dice-studios.com',
     'https://dangling-dice-studios.com',
     'https://www.dangling-dice-studios.com',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
+    // Local development origins are only allowed outside production
+    ...(isProduction ? [] : ['http://localhost:3000', 'http://127.0.0.1:3000']),
   ],
 
   DETECTOR: {

@@ -168,17 +168,26 @@ function createDrugsRouter(db) {
     return handlePartnersLookup(req, res, rxcui);
   });
 
+  // Unfiltered catalog listing only (limit/offset). Search terms are NEVER accepted in the URL:
+  // use POST /api/drugs/search so drug names stay out of HTTP access logs.
   router.get('/drugs', async (req, res) => {
+    if (typeof req.query.q === 'string' && req.query.q.trim().length > 0) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Search queries must be sent via POST /api/drugs/search.'
+      });
+    }
     return handleDrugSearch(req, res, {
-      rawQuery: req.query.q,
+      rawQuery: '',
       rawLimit: req.query.limit,
       rawOffset: req.query.offset,
-      rawLive: req.query.live,
+      rawLive: false,
     });
   });
 
-  router.get('/drugs/:rxcui', (req, res) => {
-    const rxcui = String(req.params.rxcui || '').trim();
+  // Privacy-hardened POST drug detail lookup (RxCUI in body, never in the URL)
+  router.post('/drugs/detail', (req, res) => {
+    const rxcui = String(req.body?.rxcui || '').trim();
     if (!RXCUI_PATTERN.test(rxcui)) {
       return res.status(400).json({ error: 'Bad Request', message: 'Invalid RxCUI format.' });
     }
@@ -211,7 +220,8 @@ function createDrugsRouter(db) {
     VALUES (?, ?, ?)
   `);
 
-  router.post('/drugs/:rxcui/flag', (req, res) => {
+  // Privacy-hardened POST flag: RxCUI travels in the JSON body, never in the URL path
+  router.post('/drugs/flag', (req, res) => {
     const clientIp = req.ip || 'unknown';
     if (!canSubmitFlagForIp(clientIp)) {
       return res.status(429).json({
@@ -220,7 +230,7 @@ function createDrugsRouter(db) {
       });
     }
 
-    const rxcui = String(req.params.rxcui || '').trim();
+    const rxcui = String(req.body?.rxcui || '').trim();
     if (!RXCUI_PATTERN.test(rxcui)) {
       return res.status(400).json({ error: 'Bad Request', message: 'Invalid RxCUI format.' });
     }
@@ -290,12 +300,6 @@ function createDrugsRouter(db) {
       });
     }
   }
-
-  // Verified Cash & Discount Pharmacy Links + Optional PBM Card + Brand Patient Assistance (legacy GET)
-  router.get('/drugs/:rxcui/partners', async (req, res) => {
-    const rxcui = String(req.params.rxcui || '').trim();
-    return handlePartnersLookup(req, res, rxcui);
-  });
 
   return router;
 }

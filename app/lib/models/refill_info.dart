@@ -147,8 +147,8 @@ class RefillInfo {
     final y = target.year.toString().padLeft(4, '0');
     final m = target.month.toString().padLeft(2, '0');
     final d = target.day.toString().padLeft(2, '0');
-    final dtStart = '${y}${m}${d}T090000';
-    final dtEnd = '${y}${m}${d}T091500';
+    final dtStart = '$y$m${d}T090000';
+    final dtEnd = '$y$m${d}T091500';
     final safeName = _escapeIcs(notificationTitle);
     final safeDesc = _escapeIcs(notificationBody);
     final uid = 'rxsw-refill-$rxcui-$y$m$d@rxsavingswatch.local';

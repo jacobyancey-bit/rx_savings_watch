@@ -92,9 +92,8 @@ function createApp(db, options = {}) {
 
   // Aggregate zero-PII daily counters (no IPs, cookies, user IDs, or drug names stored)
   app.use('/api/drugs', (req, res, next) => {
-    const hasGetQuery = req.method === 'GET' && typeof req.query.q === 'string' && req.query.q.trim().length > 0;
     const hasPostQuery = req.method === 'POST' && req.path === '/search' && typeof req.body?.q === 'string' && req.body.q.trim().length > 0;
-    if (hasGetQuery || hasPostQuery) {
+    if (hasPostQuery) {
       recordDailyMetric(db, 'api_searches');
     }
     next();
@@ -114,6 +113,149 @@ function createApp(db, options = {}) {
   app.use('/api', createReviewsRouter(db, { enableRateLimiter }));
   app.use('/api', createStatsRouter(db));
   app.use('/', createB2bRouter(db));
+
+  // Public Privacy Policy page synced with docs/play_store/privacy_policy.md
+  app.get('/privacy', (req, res) => {
+    const policyHtmlPath = path.join(__dirname, '..', '..', 'docs', 'play_store', 'privacy_policy.md');
+    let lastUpdated = 'November 27, 2026';
+    if (fs.existsSync(policyHtmlPath)) {
+      const md = fs.readFileSync(policyHtmlPath, 'utf8');
+      const m = md.match(/\*\*Effective date:\*\*\s*([^\r\n]+)/i);
+      if (m) lastUpdated = m[1].trim();
+    }
+    res.type('text/html; charset=utf-8').send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Rx Savings Watch — Privacy Policy | Dangling Dice Studios™</title>
+  <style>
+    :root { --teal: #057873; --teal-dark: #035a56; --bg: #f6f9f9; --card: #ffffff; --text: #142221; --muted: #546665; --border: #dce6e5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+    main { max-width: 820px; margin: 32px auto; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 36px 32px; }
+    h1 { margin-top: 0; color: var(--teal-dark); font-size: 28px; }
+    h2 { color: var(--teal); font-size: 19px; margin-top: 26px; margin-bottom: 8px; }
+    .meta { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+    .box { background: #eef7f6; border: 1px solid #b9dedb; border-radius: 12px; padding: 14px 16px; margin: 16px 0; }
+    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+    th, td { border: 1px solid var(--border); padding: 10px 12px; text-align: left; vertical-align: top; }
+    th { background: #eef7f6; color: var(--teal-dark); }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 6px; }
+    a { color: var(--teal); font-weight: 600; }
+    footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Rx Savings Watch — Privacy Policy</h1>
+    <div class="meta"><strong>Effective date:</strong> ${lastUpdated} &nbsp;|&nbsp; <strong>Developer:</strong> Dangling Dice Studios™ &nbsp;|&nbsp; <strong>Contact:</strong> <a href="mailto:support@danglingdicestudios.com">support@danglingdicestudios.com</a></div>
+    <div class="box">This policy explains what information the Rx Savings Watch app (Android) and website (rx.dangling-dice-studios.com) handle, why, and the choices you have. <strong>Rx Savings Watch is an independent app and is not affiliated with, endorsed by, or representing the FDA, NIH/NLM, CMS, HHS, or any government agency.</strong></div>
+    <h2>1. The short version</h2>
+    <ul>
+      <li><strong>No accounts.</strong> You never create an account, log in, or give us your name, email, or phone number to use the app.</li>
+      <li><strong>Your medication list stays on your device.</strong> Your medication cabinets, reminders, refill dates, supplements, notes, and settings are stored only on your phone (or in your browser on the website).</li>
+      <li><strong>Some lookups need our server.</strong> To check for generic launches, shortages, and prices, the app sends public drug codes to our server. These requests carry no name, account, or device ID.</li>
+      <li><strong>No ad networks, no analytics SDKs, no cookies, no selling of data.</strong></li>
+    </ul>
+    <h2>2. Information stored only on your device</h2>
+    <p>Medication cabinets and caregiver cabinet names, medication reminders and "Taken Today" status, refill dates and supply information, OTC and supplement lists, the copay amount you type into the savings calculator, your saved ZIP code, and your app settings stay strictly on your device. Erase all of it anytime in <strong>Settings &rarr; Erase My Medication List</strong> or by uninstalling the app.</p>
+    <h2>3. Information sent to our server</h2>
+    <table>
+      <thead><tr><th>What is sent</th><th>When</th><th>Why</th><th>Stored?</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Drug codes (RxNorm RxCUIs)</strong> + decoy common codes</td><td>Checking for updates</td><td>Return current FDA generic, shortage, and price info</td><td>No.</td></tr>
+        <tr><td><strong>Medication search terms</strong></td><td>Searching for a drug</td><td>Find the drug in catalog or public FDA/NLM databases</td><td>No. Search text is never saved.</td></tr>
+        <tr><td><strong>A drug code</strong></td><td>Opening savings options</td><td>Return pharmacy &amp; savings links</td><td>No.</td></tr>
+        <tr><td><strong>Data-quality reports</strong> (drug code + fixed issue category)</td><td>Only if you report a problem</td><td>Fix catalog errors</td><td>Yes, with no info about who sent it.</td></tr>
+        <tr><td><strong>Your 5-digit ZIP code</strong> (never your medication)</td><td>Only if you enter a ZIP</td><td>List licensed pharmacies from the public CMS NPI Registry</td><td>No. Results cached by ZIP up to 24h, not linked to you.</td></tr>
+        <tr><td><strong>Sponsored pharmacy taps</strong> (pharmacy + Call/Transfer/Website)</td><td>Tapping a sponsored listing</td><td>Give sponsoring pharmacies a total count of taps</td><td>Only as a running total per pharmacy.</td></tr>
+        <tr><td><strong>Reviews &amp; feedback</strong> (rating, category, message, platform)</td><td>Only if you submit a review</td><td>Read and respond to feedback</td><td>Yes. Stored privately &amp; emailed to support inbox via Resend. Never public.</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Please do not include your name, contact details, or personal health details in a review message.</strong> We also keep plain daily aggregate counts (e.g., total searches/day) with no user information.</p>
+    <h2>4. IP addresses and network information</h2>
+    <p>Our server and hosting provider (Railway) receive your IP address when connecting. We use it only temporarily in memory for rate limiting, abuse prevention, and preventing duplicate counts of sponsored-pharmacy taps (up to 24h). We never store IP addresses in our database or link them to drug codes, searches, ZIP codes, or reviews.</p>
+    <h2>5. Camera and the QR transfer scanner (Android)</h2>
+    <p>Camera images are processed on-device and never saved or uploaded by us. The scanner uses <strong>Google ML Kit</strong>, which may send diagnostic/usage info (device model, OS/app version, performance metrics, error codes, and a per-installation identifier) to Google only when you use the scanner (<a href="https://developers.google.com/ml-kit/android-data-disclosure" target="_blank" rel="noopener noreferrer">ML Kit data disclosure</a>). Cabinet transfer links (<code>…/#import=…</code>) keep drug codes in the URL <code>#</code> fragment, which browsers never send to any server.</p>
+    <h2>6. Website-only features</h2>
+    <ul>
+      <li><strong>Browser notifications (optional):</strong> Stores a push subscription endpoint/keys solely to send public generic-launch alerts (identical for everyone).</li>
+      <li><strong>Tip jar:</strong> Handled by Buy Me a Coffee under its own privacy policy.</li>
+      <li><strong>Pharmacy &amp; clinic partner program (businesses only):</strong> Business contact info, service ZIPs, optional NPI verification (CMS NPI Registry), and Stripe billing (we never receive full card details).</li>
+    </ul>
+    <h2>7. Advertising</h2>
+    <p>The app shows <strong>"Sponsored Local Partner (Ad)"</strong> listings for local pharmacies paying a flat monthly fee for specific ZIP codes, chosen only by ZIP — never by medications or user profiles. No ad networks, advertising IDs, or tracking.</p>
+    <h2>8. Links to other websites</h2>
+    <p>External pharmacy/savings sites (GoodRx, SingleCare, Cost Plus Drugs, Amazon Pharmacy) and government sources are governed by their own privacy policies. We send no personal/device IDs and use <code>Referrer-Policy: no-referrer</code>. As an Amazon Associate, we earn from qualifying purchases.</p>
+    <h2>9. Service providers and public data sources</h2>
+    <p>Railway (hosting), Resend (review emails), Google ML Kit (Android QR scanner), Stripe (B2B partner billing), QR Server (partner counter flyer QR images), and public U.S. government data services (openFDA, Drugs@FDA, NLM RxNorm &amp; DailyMed, CMS NADAC, CMS NPI Registry). We never sell or rent personal information or share it for cross-context behavioral advertising.</p>
+    <h2>10. Security, Retention, Deletion &amp; Your Rights</h2>
+    <p>All traffic uses HTTPS. On-device data stays until you erase it. Reviews stay until no longer needed or until you email <a href="mailto:support@danglingdicestudios.com">support@danglingdicestudios.com</a> to delete them (see <a href="/data-deletion">Data Deletion Instructions</a>). Depending on where you live (e.g., California, EU/UK), you may have rights to access, correct, or delete personal information — email us and we will respond within the time required by law.</p>
+    <h2>11. Health Information, Children &amp; Contact</h2>
+    <p>Rx Savings Watch is a consumer information tool — not a HIPAA-covered entity or medical advice. Not directed to children under 13. Changes update the effective date above. Contact: Dangling Dice Studios™ — <a href="mailto:support@danglingdicestudios.com">support@danglingdicestudios.com</a>.</p>
+    <footer><a href="/">Rx Savings Watch</a> &middot; <a href="/data-deletion">Data Deletion</a> &middot; <a href="https://dangling-dice-studios.com/">Dangling Dice Studios™</a></footer>
+  </main>
+</body>
+</html>`);
+  });
+
+  // Public Google Play Data Deletion instructions page (zero accounts / local-first storage)
+  app.get('/data-deletion', (req, res) => {
+    res.type('text/html; charset=utf-8').send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Data Deletion — Rx Savings Watch (Dangling Dice Studios)</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f6f9f9; color: #142221; line-height: 1.6; }
+    main { max-width: 740px; margin: 36px auto; background: #fff; border: 1px solid #dce6e5; border-radius: 16px; padding: 32px 28px; }
+    h1 { margin-top: 0; color: #035a56; font-size: 26px; }
+    h2 { color: #057873; font-size: 18px; margin-top: 24px; }
+    .box { background: #eef7f6; border: 1px solid #b9dedb; border-radius: 12px; padding: 14px 16px; margin: 16px 0; }
+    a { color: #057873; font-weight: 600; }
+    footer { margin-top: 28px; padding-top: 16px; border-top: 1px solid #dce6e5; font-size: 13px; color: #546665; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Data Deletion Instructions — Rx Savings Watch</h1>
+    <p><strong>Developer:</strong> Dangling Dice Studios&trade; &nbsp;|&nbsp; <strong>App:</strong> Rx Savings Watch (Android &amp; Web)</p>
+
+    <div class="box">
+      <strong>No User Accounts or Cloud Profiles:</strong> Rx Savings Watch does not create user accounts and does not store your medication cabinet, reminders, refill dates, or ZIP code on any remote server. All medication data stays strictly on your own device.
+    </div>
+
+    <h2>1. Delete All On-Device App Data Immediately</h2>
+    <ol>
+      <li>Open <strong>Rx Savings Watch</strong>.</li>
+      <li>Go to <strong>Settings &rarr; Your Device Data</strong>.</li>
+      <li>Tap <strong>Erase My Medication List</strong> and confirm. This immediately and permanently deletes all saved medications, caregiver cabinets, refill dates, reminders, and local preferences from your device.</li>
+      <li>Alternatively, uninstalling the Android app (or clearing site data in your web browser) permanently deletes all local app data.</li>
+    </ol>
+
+    <h2>2. Delete Optional Web Push Subscriptions or Feedback</h2>
+    <ul>
+      <li><strong>Browser Push Alerts:</strong> Toggle off in <strong>Settings &rarr; Turn Off Browser Alerts</strong> to immediately remove your anonymous push endpoint from our server.</li>
+      <li><strong>In-App Feedback / Review Submissions:</strong> If you voluntarily submitted feedback through the in-app Review form or emailed us, email <a href="mailto:support@danglingdicestudios.com?subject=Rx%20Savings%20Watch%20Data%20Deletion%20Request">support@danglingdicestudios.com</a> with the date/details of your message and we will delete it within 7 days.</li>
+    </ul>
+
+    <h2>3. Data Retention Summary</h2>
+    <p>Transient network requests (such as anonymous medication lookups or 5-digit ZIP pharmacy lookups) are processed solely to return results and are not linked to any user profile. Aggregate daily server counters contain no personal identifiers, IP addresses, or medication names.</p>
+
+    <footer>
+      <a href="/">Return to Rx Savings Watch</a> &middot;
+      <a href="https://dangling-dice-studios.com/rx-savings-watch/privacy.html">Privacy Policy</a> &middot;
+      Contact: <a href="mailto:support@danglingdicestudios.com">support@danglingdicestudios.com</a>
+    </footer>
+  </main>
+</body>
+</html>`);
+  });
 
   // Catch-all 404 for unknown /api/* routes (prevents info leakage)
   app.use('/api', (req, res) => {

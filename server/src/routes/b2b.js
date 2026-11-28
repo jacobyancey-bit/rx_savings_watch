@@ -199,7 +199,7 @@ function verifyStripeWebhookSignature(rawBody, signatureHeader, webhookSecret) {
   return false;
 }
 
-function renderFlyerHtml(partner) {
+function renderFlyerHtml(partner, nonce = "") {
   const firstZip =
     String(partner.zip_codes || "")
       .split(",")
@@ -241,7 +241,7 @@ function renderFlyerHtml(partner) {
 </head>
 <body>
   <div class="toolbar">
-    <button class="print-btn" onclick="window.print()">Print Counter Flyer / Bag Stuffer</button>
+    <button class="print-btn" id="printBtn" type="button">Print Counter Flyer / Bag Stuffer</button>
   </div>
   <div class="sheet">
     <span class="eyebrow">Free Refill Reminders &amp; Generic Savings</span>
@@ -261,11 +261,14 @@ function renderFlyerHtml(partner) {
       Informational only — not insurance or medical advice.
     </div>
   </div>
+  <script nonce="${nonce}">
+    document.getElementById('printBtn').addEventListener('click', function () { window.print(); });
+  </script>
 </body>
 </html>`;
 }
 
-function renderPartnersPageHtml() {
+function renderPartnersPageHtml(nonce = "") {
   const serviceCheckboxes = Object.entries(SERVICE_LABELS)
     .map(
       ([key, label]) => `
@@ -358,7 +361,7 @@ function renderPartnersPageHtml() {
           <li>Public cash-price highlight + service badges (delivery, compounding, etc.)</li>
           <li>Printable co-branded Counter QR Flyer + monthly ROI counters</li>
         </ul>
-        <button type="button" class="btn-outline" onclick="selectPlan('pilot_60d')">Start 60-Day Free Pilot</button>
+        <button type="button" class="btn-outline" data-plan="pilot_60d">Start 60-Day Free Pilot</button>
       </div>
 
       <div class="card" style="border-color:#057873;border-width:2px;">
@@ -370,7 +373,7 @@ function renderPartnersPageHtml() {
           <li>Public cash-price menu + service badges + 1-tap Call / Transfer Rx</li>
           <li>Printable Counter QR Flyer + monthly aggregate ROI report</li>
         </ul>
-        <button type="button" class="btn" onclick="selectPlan('local_149')">Subscribe — $149/mo</button>
+        <button type="button" class="btn" data-plan="local_149">Subscribe — $149/mo</button>
       </div>
 
       <div class="card">
@@ -382,7 +385,7 @@ function renderPartnersPageHtml() {
           <li>Everything in Local Pharmacy + custom counter flyers per location</li>
           <li>Zero patient PHI ever shared or stored</li>
         </ul>
-        <button type="button" class="btn-outline" onclick="selectPlan('multi_349')">Subscribe — $349/mo</button>
+        <button type="button" class="btn-outline" data-plan="multi_349">Subscribe — $349/mo</button>
       </div>
     </section>
 
@@ -471,7 +474,7 @@ function renderPartnersPageHtml() {
     <p>© 2026 Dangling Dice Studios™ • Questions? Email support@danglingdicestudios.com</p>
   </footer>
 
-  <script>
+  <script nonce="${nonce}">
     function updateSubmitLabel(plan) {
       const btn = document.getElementById('submitBtn');
       if (!btn) return;
@@ -559,14 +562,81 @@ function renderPartnersPageHtml() {
         submitBtn.disabled = false;
       }
     });
+
+    document.querySelectorAll('[data-plan]').forEach(function (btn) {
+      btn.addEventListener('click', function () { selectPlan(btn.getAttribute('data-plan')); });
+    });
   </script>
 </body>
 </html>`;
 }
 
+/**
+ * Strict Content-Security-Policy for server-rendered B2B pages. Inline scripts must carry the
+ * per-response nonce; inline styles are allowed (static, no user-controlled CSS).
+ */
+function setStrictPageCsp(res, nonce, { allowQrImages = false } = {}) {
+  const imgSrc = allowQrImages ? "img-src 'self' data: https://api.qrserver.com" : "img-src 'self' data:";
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'none'",
+      `script-src 'nonce-${nonce}'`,
+      "style-src 'unsafe-inline'",
+      imgSrc,
+      "connect-src 'self'",
+      "form-action 'self'",
+      "base-uri 'none'",
+      "frame-ancestors 'self'",
+    ].join("; "),
+  );
+}
+
 function createB2bRouter(db) {
   const router = express.Router();
   const ipBuckets = new Map();
+
+  // ROI counter integrity: each visitor (IP, held in memory only, never persisted) can add at most
+  // ONE impression and ONE click of each type per partner per 24h, so paying partners see
+  // de-duplicated numbers that cannot be trivially inflated by repeated requests.
+  const COUNTER_DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
+  const COUNTER_DEDUPE_MAX = 20000;
+  const counterSeen = new Map(); // key -> expiresAt
+  function shouldCountOnce(ip, partnerId, kind) {
+    const now = Date.now();
+    if (counterSeen.size >= COUNTER_DEDUPE_MAX) {
+      for (const [k, exp] of counterSeen) {
+        if (exp <= now) counterSeen.delete(k);
+      }
+      if (counterSeen.size >= COUNTER_DEDUPE_MAX) counterSeen.clear();
+    }
+    const key = `${ip}|${partnerId}|${kind}`;
+    const exp = counterSeen.get(key);
+    if (exp && exp > now) return false;
+    counterSeen.set(key, now + COUNTER_DEDUPE_WINDOW_MS);
+    return true;
+  }
+
+  // Stripe webhook idempotency: Stripe retries deliveries, so each event id is processed once.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+      event_id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      received_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  const insertStripeEventStmt = db.prepare(
+    "INSERT OR IGNORE INTO stripe_webhook_events (event_id, event_type) VALUES (?, ?)",
+  );
+  const reactivateBySubscriptionStmt = db.prepare(`
+    UPDATE b2b_partners
+    SET payment_status = 'paid',
+        status = CASE WHEN npi_verified = 1 THEN 'active' ELSE status END,
+        updated_at = datetime('now')
+    WHERE stripe_subscription_id = ?
+      AND payment_status = 'past_due'
+      AND status = 'paused'
+  `);
 
   function canApplyForIp(ip) {
     const now = Date.now();
@@ -648,7 +718,9 @@ function createB2bRouter(db) {
 
   // Standalone B2B landing page
   router.get("/partners", (req, res) => {
-    res.type("text/html; charset=utf-8").send(renderPartnersPageHtml());
+    const nonce = crypto.randomBytes(16).toString("base64");
+    setStrictPageCsp(res, nonce);
+    res.type("text/html; charset=utf-8").send(renderPartnersPageHtml(nonce));
   });
 
   // Printable Co-Branded Counter QR Flyer for any active partner pharmacy
@@ -664,7 +736,9 @@ function createB2bRouter(db) {
         .type("text/plain")
         .send("Partner flyer not available");
     }
-    res.type("text/html; charset=utf-8").send(renderFlyerHtml(partner));
+    const nonce = crypto.randomBytes(16).toString("base64");
+    setStrictPageCsp(res, nonce, { allowQrImages: true });
+    res.type("text/html; charset=utf-8").send(renderFlyerHtml(partner, nonce));
   });
 
   // Public B2B application submission (+ automatic Stripe Checkout for paid plans when configured)
@@ -788,6 +862,14 @@ function createB2bRouter(db) {
     const type = event.type;
     const obj = event.data?.object || {};
 
+    if (typeof event.id === "string" && event.id) {
+      const inserted = insertStripeEventStmt.run(event.id, String(type || "unknown"));
+      if (inserted.changes === 0) {
+        // Already processed this exact event (Stripe retry) — acknowledge without re-applying.
+        return res.json({ received: true, duplicate: true });
+      }
+    }
+
     if (type === "checkout.session.completed") {
       const partnerId = parseInt(
         obj.client_reference_id || obj.metadata?.partner_id,
@@ -799,6 +881,13 @@ function createB2bRouter(db) {
           obj.subscription ? String(obj.subscription) : null,
           partnerId,
         );
+      }
+    } else if (type === "invoice.paid" || type === "invoice.payment_succeeded") {
+      // A successful retry after a failed payment restores only partners that were auto-paused
+      // for past_due (never overrides an admin-paused or canceled listing).
+      const subId = obj.subscription ? String(obj.subscription) : null;
+      if (subId) {
+        reactivateBySubscriptionStmt.run(subId);
       }
     } else if (type === "invoice.payment_failed") {
       const subId = obj.subscription ? String(obj.subscription) : null;
@@ -963,8 +1052,11 @@ async function lookupLocalNpiPharmacies(zip) {
       )
       .slice(0, MAX_ACTIVE_PARTNERS_PER_ZIP);
 
+    const clientIp = req.ip || "unknown";
     const payload = matched.map((p) => {
-      incImpressionStmt.run(p.id);
+      if (shouldCountOnce(clientIp, p.id, "impression")) {
+        incImpressionStmt.run(p.id);
+      }
       const serviceLabels = normalizeServices(p.services).map(
         (k) => SERVICE_LABELS[k],
       );
@@ -999,6 +1091,10 @@ async function lookupLocalNpiPharmacies(zip) {
       !ALLOWED_EVENTS.has(eventType)
     ) {
       return res.status(400).json({ error: "Invalid event payload" });
+    }
+    if (!shouldCountOnce(req.ip || "unknown", partnerId, eventType)) {
+      // Same visitor already counted for this partner/event in the last 24h.
+      return res.json({ recorded: false, deduplicated: true });
     }
     if (eventType === "call") incCallStmt.run(partnerId);
     else if (eventType === "transfer") incTransferStmt.run(partnerId);

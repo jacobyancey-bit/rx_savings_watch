@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/link.dart';
 import 'package:rx_savings_watch/models/drug.dart';
 import 'package:rx_savings_watch/models/medication_reminder.dart';
 import 'package:rx_savings_watch/models/patient_cabinet.dart';
@@ -100,7 +99,9 @@ class _SmokeNotificationService extends NotificationService {
     MedicationReminder reminder, {
     String cabinetId = 'default',
   }) async {
-    scheduled.add('$cabinetId::${reminder.rxcui}::${reminder.notificationTitle}');
+    scheduled.add(
+      '$cabinetId::${reminder.rxcui}::${reminder.notificationTitle}',
+    );
   }
 
   @override
@@ -116,7 +117,9 @@ class _SmokeNotificationService extends NotificationService {
     RefillInfo refill, {
     String cabinetId = 'default',
   }) async {
-    refillScheduled.add('$cabinetId::${refill.rxcui}::${refill.notificationTitle}');
+    refillScheduled.add(
+      '$cabinetId::${refill.rxcui}::${refill.notificationTitle}',
+    );
   }
 
   @override
@@ -215,11 +218,7 @@ void main() {
 
       // 6. Add Eliquis to Mom's cabinet and set a reminder -> verify labeled notification
       await provider.addDrug(
-        Drug(
-          rxcui: '1364430',
-          brandName: 'Eliquis',
-          genericName: 'apixaban',
-        ),
+        Drug(rxcui: '1364430', brandName: 'Eliquis', genericName: 'apixaban'),
       );
       await tester.pumpAndSettle();
       expect(find.text("Mom's Cabinet (1)"), findsOneWidget);
@@ -250,7 +249,11 @@ void main() {
       // 8. Verify zero PII and zero OTC IDs ever sent to API (only numeric RxCUIs)
       for (final payload in api.recordedRxcuiPayloads) {
         for (final id in payload) {
-          expect(RegExp(r'^\d+$').hasMatch(id), true, reason: 'Only numeric RxCUIs may leave device');
+          expect(
+            RegExp(r'^\d+$').hasMatch(id),
+            true,
+            reason: 'Only numeric RxCUIs may leave device',
+          );
         }
       }
 
@@ -289,9 +292,7 @@ void main() {
               genericName: 'lisdexamfetamine dimesylate',
               hasApprovedGeneric: true,
               commercialGenericAvailable: true,
-              pricing: PricingInfo(
-                estimatedSavingsPct: 84.0,
-              ),
+              pricing: PricingInfo(estimatedSavingsPct: 84.0),
             ),
           ],
         ),
@@ -330,7 +331,10 @@ void main() {
 
       expect(find.text('All Stocked'), findsOneWidget);
       expect(find.textContaining('Refill in 30d'), findsOneWidget);
-      expect(notifs.refillScheduled.last, 'default::855333::Refill Reminder: Vyvanse');
+      expect(
+        notifs.refillScheduled.last,
+        'default::855333::Refill Reminder: Vyvanse',
+      );
 
       // 3. Simulate a prescription due in 3 days with 1 refill remaining -> verify KPI + Mark Refilled
       final now = DateTime.now();
@@ -394,7 +398,10 @@ void main() {
       await tester.ensureVisible(find.text('Privacy'));
       await tester.tap(find.text('Privacy'));
       await tester.pumpAndSettle();
-      expect(find.text('Privacy Policy & Consumer Health Data Notice'), findsOneWidget);
+      expect(
+        find.text('Privacy Policy & Consumer Health Data Notice'),
+        findsOneWidget,
+      );
       await tester.tap(find.byIcon(Icons.close));
       await tester.pumpAndSettle();
 
@@ -487,20 +494,23 @@ void main() {
                   'name': 'CVS Pharmacy',
                   'address': '3730 Belt Line Rd, Addison, TX 75001',
                   'phone': '(214) 414-0026',
-                  'maps_url': 'https://www.google.com/maps/search/?api=1&query=CVS+Pharmacy+3730+Belt+Line+Rd',
+                  'maps_url':
+                      'https://www.google.com/maps/search/?api=1&query=CVS+Pharmacy+3730+Belt+Line+Rd',
                 },
               ],
               initialPartners: const [
                 {
                   'id': 'cost_plus_drugs',
                   'label': 'Cost Plus Drugs',
-                  'url': 'https://www.costplusdrugs.com/medications/atorvastatin-10mg-tablet/',
+                  'url':
+                      'https://www.costplusdrugs.com/medications/atorvastatin-10mg-tablet/',
                   'price_hint': 'from \$5.25',
                 },
                 {
                   'id': 'amazon_pharmacy',
                   'label': 'Amazon Pharmacy',
-                  'url': 'https://pharmacy.amazon.com/s?k=Lipitor&tag=danglingdices-20',
+                  'url':
+                      'https://pharmacy.amazon.com/s?k=Lipitor&tag=danglingdices-20',
                   'price_hint': null,
                 },
                 {
@@ -543,8 +553,14 @@ void main() {
       await tester.enterText(zipField, '75001');
       await tester.pumpAndSettle();
       expect(storage.localZip, '75001');
-      expect(find.textContaining('Showing real pharmacies in 75001'), findsOneWidget);
-      expect(find.textContaining('Est. 30-day generic cash range near 75001'), findsOneWidget);
+      expect(
+        find.textContaining('Showing real pharmacies in 75001'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Est. 30-day generic cash range near 75001'),
+        findsOneWidget,
+      );
       expect(find.text('Local Pharmacies in 75001'), findsOneWidget);
       expect(find.text('CVS Pharmacy'), findsOneWidget);
       expect(find.text('Call (214) 414-0026'), findsOneWidget);
@@ -553,7 +569,7 @@ void main() {
       expect(find.text('SingleCare near 75001'), findsOneWidget);
       expect(find.text('GoodRx near 75001'), findsOneWidget);
       expect(find.text('Main Street Independent Pharmacy'), findsOneWidget);
-      expect(find.text('Sponsored Local Partner'), findsOneWidget);
+      expect(find.text('Sponsored Local Partner (Ad)'), findsOneWidget);
       expect(find.text('Most 30-day generics \$10 cash'), findsOneWidget);
       expect(find.text('Free Local Delivery'), findsOneWidget);
       expect(find.text('Blister Packs'), findsOneWidget);

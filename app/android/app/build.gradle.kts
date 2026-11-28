@@ -45,6 +45,17 @@ android {
 
     buildTypes {
         release {
+            // Local `flutter run --release` / assembleRelease may fall back to the debug key, but a
+            // Play-store App Bundle (bundleRelease) must NEVER be silently debug-signed.
+            val requestsReleaseBundle = gradle.startParameter.taskNames.any {
+                it.contains("bundle", ignoreCase = true) && it.contains("release", ignoreCase = true)
+            }
+            if (!keystorePropertiesFile.exists() && requestsReleaseBundle) {
+                throw GradleException(
+                    "Release App Bundle requires android/key.properties with the upload keystore. " +
+                        "Refusing to sign a Play-store bundle with the debug key."
+                )
+            }
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {

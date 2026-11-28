@@ -52,7 +52,9 @@ function formatFdaDate(raw) {
   return null;
 }
 
-const SALT_SUFFIX_REGEX = /\b(hydrochloride|hcl|dihydrochloride|sodium|potassium|calcium|magnesium|mesylate|besylate|tartrate|bitartrate|succinate|fumarate|hemifumarate|maleate|citrate|acetate|phosphate|sulfate|bisulfate|bromide|chloride|dimesylate|disoproxil|monohydrate|dihydrate|trihydrate|anhydrous|tromethamine|olamine|propionate|valerate|dipropionate|acetonide|saccharate|aspartate|gluconate|lactate|nitrate|oxide|benzoate|pamoate|stearate|tosylate|xinafoate|furoate|malate|carbonate|bicarbonate|erbumine|medoxomil|cilexetil|pivoxil|alafenamide|k\b|na\b)\b/gi;
+const SALT_SUFFIX_REGEX = /\b(hydrochloride|hcl|dihydrochloride|sodium|potassium|calcium|magnesium|mesylate|besylate|tartrate|bitartrate|succinate|fumarate|hemifumarate|maleate|citrate|acetate|phosphate|sulfate|bisulfate|bromide|chloride|dimesylate|monohydrate|dihydrate|trihydrate|anhydrous|tromethamine|olamine|propionate|valerate|dipropionate|acetonide|saccharate|aspartate|gluconate|lactate|nitrate|oxide|benzoate|pamoate|stearate|tosylate|xinafoate|furoate|malate|carbonate|bicarbonate|erbumine|medoxomil|cilexetil|pivoxil|k\b|na\b)\b/gi;
+// NOTE: "disoproxil" and "alafenamide" are intentionally NOT stripped: tenofovir disoproxil (TDF)
+// and tenofovir alafenamide (TAF) are clinically distinct, non-substitutable prodrugs.
 
 /**
  * Normalize an active ingredient string to its base chemical moiety (salt-stripped, lowercase).
@@ -86,11 +88,14 @@ function parseExpectedIngredients(genericNameOrList) {
 }
 
 function isMixedAmphetamineSet(baseNames) {
-  return (
-    Array.isArray(baseNames) &&
-    baseNames.length > 0 &&
-    baseNames.every(n => n.includes('amphetamine'))
-  );
+  // Mixed-salt products (Adderall / Mydayis) contain BOTH amphetamine and dextroamphetamine.
+  // A single-moiety product (Dexedrine = dextroamphetamine only, Evekeo = amphetamine only)
+  // must never be treated as equivalent to a mixed-salt product.
+  if (!Array.isArray(baseNames) || baseNames.length === 0) return false;
+  if (!baseNames.every(n => n.includes('amphetamine'))) return false;
+  const hasDextro = baseNames.some(n => n.startsWith('dextroamphetamine'));
+  const hasRacemic = baseNames.some(n => n.startsWith('amphetamine') || n.startsWith('levoamphetamine'));
+  return hasDextro && hasRacemic;
 }
 
 /**
@@ -100,9 +105,14 @@ function ingredientTokensMatch(a, b) {
   if (!a || !b) return false;
   if (a === b) return true;
   if (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a))) return true;
-  const aFirst = a.split(/[\s\-]+/)[0];
-  const bFirst = b.split(/[\s\-]+/)[0];
-  return aFirst.length >= 5 && aFirst === bFirst;
+  // First-word match is only safe when one side is a bare single-word moiety
+  // (e.g. "tamsulosin" vs "tamsulosin xyz"). Two multi-word names that merely share a
+  // first word are distinct drugs (insulin glargine vs insulin lispro,
+  // tenofovir alafenamide vs tenofovir disoproxil).
+  const aTokens = a.split(/[\s\-]+/).filter(Boolean);
+  const bTokens = b.split(/[\s\-]+/).filter(Boolean);
+  if (aTokens.length > 1 && bTokens.length > 1) return false;
+  return aTokens[0].length >= 5 && aTokens[0] === bTokens[0];
 }
 
 /**
@@ -414,9 +424,9 @@ async function fetchDrugsAtFda(genericName, brandName, drugType = 'small_molecul
     const exactFiltered = results.filter(a =>
       matchesExpectedIngredients(getFdaAppIngredients(a), fallbackExpected)
     );
-    if (exactFiltered.length > 0) {
-      results = exactFiltered;
-    }
+    // Fail closed: never fall back to unfiltered name-search hits (which may be different
+    // salts, prodrugs, or combinations) when nothing matches the exact ingredient profile.
+    results = exactFiltered;
   }
 
   if (results.length === 0 && brandName) {
@@ -1042,12 +1052,69 @@ function toTitleCase(str) {
 }
 
 function parseNumericStrength(str) {
-  const m = String(str).match(/(\d+(?:\.\d+)?)/);
-  return m ? Number.parseFloat(m[1]) : Number.MAX_SAFE_INTEGER;
+  const m = String(str).match(/(\d+(?:\.\d+)?)\s*(mcg|ug|mg|g)?/i);
+  if (!m) return Number.MAX_SAFE_INTEGER;
+  const value = Number.parseFloat(m[1]);
+  const unit = (m[2] || '').toLowerCase();
+  // Sort in mg-equivalent so "25 mcg" sorts before "1 mg"
+  if (unit === 'mcg' || unit === 'ug') return value / 1000;
+  if (unit === 'g') return value * 1000;
+  return value;
 }
 
 function formatStrengthNumber(num) {
   return Number(num.toFixed(3)).toString();
+}
+
+/**
+ * Canonicalize unit spelling in a strength label (display value otherwise unchanged):
+ *   "25 ug" -> "25 mcg", "100 [iu]/ml" / "100 unt/ml" -> "100 units/ml", "1000 mcg" -> "1 mg"
+ */
+function canonicalizeStrength(raw) {
+  if (!raw) return raw;
+  const canonPart = (part) => {
+    const p = String(part)
+      .toLowerCase()
+      .replace(/\[iu\]|\biu\b|\bunt\b|\bunits?\b/g, 'units')
+      .replace(/\bug\b|µg|\bmcg\b/g, 'mcg')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const m = p.match(/^(\d*(?:\.\d+)?)\s*(mg|mcg)(\s*\/.*)?$/);
+    if (!m || m[1] === '') return p;
+    let value = Number.parseFloat(m[1]);
+    let unit = m[2];
+    if (unit === 'mcg' && value >= 1000) { value = value / 1000; unit = 'mg'; }
+    const rest = (m[3] || '').replace(/\s*\/\s*/, '/');
+    // Preserve full precision (e.g. 0.00125 mg/actuat) — never round clinical strengths
+    return `${Number(value.toPrecision(10))} ${unit}${rest}`;
+  };
+  return String(raw).split(/\s\/\s/).map(canonPart).join(' / ');
+}
+
+/** mg-equivalent identity key so "0.025 mg" and "25 mcg" are recognized as the same strength. */
+function strengthIdentityKey(label) {
+  return String(label).split(/\s\/\s/).map(part => {
+    const m = String(part).match(/^(\d*(?:\.\d+)?)\s*(mg|mcg)(\/.*)?$/);
+    if (!m || m[1] === '') return part;
+    const mg = m[2] === 'mcg' ? Number.parseFloat(m[1]) / 1000 : Number.parseFloat(m[1]);
+    return `${Number(mg.toFixed(6))}mg${m[3] || ''}`;
+  }).join(' / ');
+}
+
+/**
+ * Collapse equivalent strengths (e.g. "0.025 mg" + "25 mcg") into one label.
+ * Prefers the mcg label when the source itself published one (e.g. levothyroxine "25 mcg").
+ */
+function dedupeStrengths(labels) {
+  const byKey = new Map();
+  for (const raw of labels) {
+    const label = canonicalizeStrength(raw);
+    if (!label) continue;
+    const key = strengthIdentityKey(label);
+    const existing = byKey.get(key);
+    if (!existing || (/\bmg\b/.test(existing) && /\bmcg\b/.test(label))) byKey.set(key, label);
+  }
+  return [...byKey.values()];
 }
 
 function normalizeDosageFormLabel(rawForm, rawRoute = '') {
@@ -1127,7 +1194,7 @@ function extractDosageOptions(ndcResults) {
     if (!formMap.has(formLabel)) {
       formMap.set(formLabel, new Set());
     }
-    formMap.get(formLabel).add(strength);
+    formMap.get(formLabel).add(canonicalizeStrength(strength));
   }
 
   const preferredOrder = [
@@ -1154,7 +1221,7 @@ function extractDosageOptions(ndcResults) {
     if (formMap.has(form)) {
       ordered.push({
         form,
-        strengths: [...formMap.get(form)].sort((a, b) => parseNumericStrength(a) - parseNumericStrength(b)),
+        strengths: dedupeStrengths(formMap.get(form)).sort((a, b) => parseNumericStrength(a) - parseNumericStrength(b)),
       });
       formMap.delete(form);
     }
@@ -1162,7 +1229,7 @@ function extractDosageOptions(ndcResults) {
   for (const [form, set] of formMap.entries()) {
     ordered.push({
       form,
-      strengths: [...set].sort((a, b) => parseNumericStrength(a) - parseNumericStrength(b)),
+      strengths: dedupeStrengths(set).sort((a, b) => parseNumericStrength(a) - parseNumericStrength(b)),
     });
   }
   return ordered;
@@ -1208,7 +1275,7 @@ function extractCleanStrengths(ndcResults, rxConcepts = []) {
         return /^\d/.test(norm) ? norm : null;
       }).filter(Boolean);
       if (parts.length >= 2) {
-        strengthSet.add(parts.join(' / '));
+        strengthSet.add(canonicalizeStrength(parts.join(' / ')));
       }
       continue;
     }
@@ -1225,7 +1292,7 @@ function extractCleanStrengths(ndcResults, rxConcepts = []) {
     }
   }
 
-  return [...strengthSet].sort((a, b) => parseNumericStrength(a) - parseNumericStrength(b));
+  return dedupeStrengths(strengthSet).sort((a, b) => parseNumericStrength(a) - parseNumericStrength(b));
 }
 
 /**
@@ -1457,7 +1524,13 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
   }
 
   // Run full 6-source cross-referenced live ingestion (only clear stale rows after live API confirms match)
+  // Preserve the original launch-detection timestamp across forced refreshes so a routine
+  // re-audit never re-announces an already-known generic launch as a "new" alert.
+  let priorLaunchDetectedAt = null;
   if (existing && options.forceRefresh && results.length > 0) {
+    priorLaunchDetectedAt = db.prepare(
+      "SELECT MIN(detected_at) AS first FROM alert_events WHERE drug_id = ? AND event_type = 'commercial_generic_launch'"
+    ).get(existing.id)?.first || null;
     db.prepare('DELETE FROM generic_status WHERE drug_id = ?').run(existing.id);
     db.prepare('DELETE FROM market_availability WHERE drug_id = ?').run(existing.id);
     db.prepare('DELETE FROM alert_events WHERE drug_id = ?').run(existing.id);
@@ -1482,7 +1555,10 @@ async function discoverAndIngestDrug(db, rawQuery, options = {}) {
   // Immediately evaluate 2-signal commercial generic launch for the newly discovered drug
   const { GenericLaunchDetector } = require('../detector');
   const detector = new GenericLaunchDetector(db);
-  detector.evaluateDrug(savedDrug, { persistAlert: true });
+  detector.evaluateDrug(savedDrug, {
+    persistAlert: true,
+    ...(priorLaunchDetectedAt ? { detectedAt: priorLaunchDetectedAt } : {}),
+  });
 
   return savedDrug;
 }
@@ -1567,4 +1643,6 @@ module.exports = {
   extractRxNormBrand,
   filterRxNormConcepts,
   matchesNadacIngredientProfile,
+  canonicalizeStrength,
+  dedupeStrengths,
 };

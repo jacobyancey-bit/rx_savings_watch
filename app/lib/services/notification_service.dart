@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 import '../models/medication_reminder.dart';
@@ -14,23 +15,22 @@ class NotificationService {
   NotificationService({FlutterLocalNotificationsPlugin? plugin})
       : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
-  void _ensureTimezone() {
+  /// Resolves the device's real IANA timezone (e.g. `America/New_York`) so daily/monthly
+  /// reminders stay at the same wall-clock time across DST transitions.
+  ///
+  /// Matching by the current UTC offset alone is NOT safe: for US Eastern in winter (UTC-5)
+  /// the first offset match is `America/Bogota`, which never observes DST, so reminders would
+  /// silently shift by one hour every March and November.
+  Future<void> _ensureTimezone() async {
     if (_tzInitialized) return;
     try {
       tzdata.initializeTimeZones();
-      final offset = DateTime.now().timeZoneOffset;
-      tz.Location? matched;
-      for (final loc in tz.timeZoneDatabase.locations.values) {
-        if (loc.currentTimeZone.offset == offset) {
-          matched = loc;
-          break;
-        }
-      }
-      if (matched != null) {
-        tz.setLocalLocation(matched);
-      }
+      final info = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(info.identifier));
       _tzInitialized = true;
     } catch (e) {
+      // Fallback: keep the timezone package default (UTC) rather than guessing a zone by
+      // offset, and retry on the next scheduling call.
       debugPrint('[NotificationService] Timezone init warning: $e');
     }
   }
@@ -164,7 +164,7 @@ class NotificationService {
   }) async {
     if (kIsWeb) return;
     await initialize();
-    _ensureTimezone();
+    await _ensureTimezone();
 
     // Always clear previous slots for this medication first
     await cancelMedicationReminders(reminder.rxcui, cabinetId: cabinetId);
@@ -277,7 +277,7 @@ class NotificationService {
   }) async {
     if (kIsWeb) return;
     await initialize();
-    _ensureTimezone();
+    await _ensureTimezone();
 
     await cancelRefillReminder(refill.rxcui, cabinetId: cabinetId);
     if (!refill.enabled) return;

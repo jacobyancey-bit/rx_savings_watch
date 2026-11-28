@@ -1,5 +1,19 @@
 const express = require('express');
 const { getVerifiedPartnersForDrug } = require('../services/partnerResolver');
+const { calculateMatchedSavings } = require('../detector/rules');
+
+const DRUG_LIST_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Human-readable label for a strengthFormKey match, e.g. "10mg|tab|EA" -> "10 mg tablet (per EA)". */
+function describeMatchedKey(key) {
+  if (!key) return '';
+  const [strength, form, unit] = String(key).split('|');
+  const strengthLabel = strength.replace(/^([d.]+)(MG|UNIT|%|G)/, (_, v, u) => `${v} ${u.toLowerCase()}`);
+  const forms = { tab: 'tablet', cap: 'capsule', liq: 'liquid', inh: 'inhaler', inj: 'injection', other: '' };
+  const isEr = form.startsWith('er-');
+  const formLabel = forms[form.replace(/^er-/, '')] ?? '';
+  return [strengthLabel, isEr ? 'extended-release' : '', formLabel].filter(Boolean).join(' ') + (unit ? ` (per ${unit})` : '');
+}
 
 const SITE_ORIGIN = 'https://rx.dangling-dice-studios.com';
 
@@ -89,9 +103,20 @@ function renderLayout({ title, description, canonicalUrl, jsonLd, bodyHtml }) {
     ${bodyHtml}
   </main>
   <footer>
-    <p><strong>Privacy-First:</strong> Zero accounts, zero ad trackers, zero personal data collected. All medication cabinets and refill reminders stay strictly on your device.</p>
-    <p>Informational only — not medical advice and not insurance. Always verify prescriptions, dosages, and generic substitutions with your doctor or pharmacist. As an Amazon Associate, Dangling Dice Studios™ earns from qualifying purchases.</p>
-    <p>© 2026 Dangling Dice Studios™ • Public FDA, NLM RxNorm &amp; CMS NADAC Data</p>
+    <p><strong>Not a government website.</strong> Rx Savings Watch is an independent application by Dangling Dice Studios™ and is NOT affiliated with, endorsed by, or representing the FDA, NIH/NLM, CMS, HHS, or any U.S. government agency.</p>
+    <p>Public data sources:
+      <a href="https://www.accessdata.fda.gov/scripts/cder/ob/" rel="noopener noreferrer">FDA Orange Book</a> •
+      <a href="https://www.accessdata.fda.gov/scripts/cder/daf/" rel="noopener noreferrer">Drugs@FDA</a> •
+      <a href="https://open.fda.gov/" rel="noopener noreferrer">openFDA</a> •
+      <a href="https://www.accessdata.fda.gov/scripts/drugshortages/" rel="noopener noreferrer">FDA Drug Shortages</a> •
+      <a href="https://www.nlm.nih.gov/research/umls/rxnorm/" rel="noopener noreferrer">NLM RxNorm</a> •
+      <a href="https://dailymed.nlm.nih.gov/" rel="noopener noreferrer">NLM DailyMed</a> •
+      <a href="https://data.medicaid.gov/" rel="noopener noreferrer">CMS NADAC</a> •
+      <a href="https://npiregistry.cms.hhs.gov/" rel="noopener noreferrer">CMS NPI Registry</a>
+    </p>
+    <p><strong>Privacy:</strong> No accounts and no ad trackers. Medication cabinets and reminders are stored on your device; anonymous status checks send only public drug codes and are never linked to you.</p>
+    <p>Informational only — not medical advice and not insurance. Always verify prescriptions, dosages, and generic substitutions with your doctor or pharmacist. Prices shown are CMS NADAC pharmacy acquisition benchmarks, not what you will pay. As an Amazon Associate, Dangling Dice Studios™ earns from qualifying purchases.</p>
+    <p>© 2026 Dangling Dice Studios™</p>
   </footer>
 </body>
 </html>`;
@@ -119,6 +144,34 @@ function createSeoRouter(db) {
     ORDER BY LOWER(COALESCE(NULLIF(TRIM(d.brand_name), ''), d.generic_name)) ASC
   `);
 
+  const getMarketRowsStmt = db.prepare('SELECT * FROM market_availability WHERE drug_id = ?');
+
+  // Strict CSP for server-rendered medication pages: no executable scripts at all
+  // (JSON-LD data blocks are not executed and are unaffected).
+  router.use('/medications', (req, res, next) => {
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'self'"
+    );
+    next();
+  });
+
+  // Short-lived in-memory cache: the full directory query runs at most once per TTL instead of
+  // on every /sitemap.xml, /medications and /medications/:slug request.
+  let drugListCache = null; // { expiresAt, drugs, bySlug }
+  function getDrugList() {
+    const now = Date.now();
+    if (drugListCache && drugListCache.expiresAt > now) return drugListCache;
+    const drugs = listAllDrugsStmt.all();
+    const bySlug = new Map();
+    for (const d of drugs) {
+      const slug = drugSlug(d);
+      if (!bySlug.has(slug)) bySlug.set(slug, d);
+    }
+    drugListCache = { expiresAt: now + DRUG_LIST_CACHE_TTL_MS, drugs, bySlug };
+    return drugListCache;
+  }
+
   router.get('/robots.txt', (req, res) => {
     res.type('text/plain; charset=utf-8');
     res.send([
@@ -133,7 +186,7 @@ function createSeoRouter(db) {
   });
 
   router.get('/sitemap.xml', (req, res) => {
-    const drugs = listAllDrugsStmt.all();
+    const { drugs } = getDrugList();
     const today = new Date().toISOString().split('T')[0];
     const seenSlugs = new Set();
 
@@ -160,7 +213,7 @@ function createSeoRouter(db) {
   });
 
   router.get('/medications', (req, res) => {
-    const drugs = listAllDrugsStmt.all();
+    const { drugs } = getDrugList();
     const seenSlugs = new Set();
     const cards = [];
 
@@ -209,8 +262,7 @@ function createSeoRouter(db) {
       return res.status(404).type('text/plain').send('Medication not found');
     }
 
-    const drugs = listAllDrugsStmt.all();
-    const drug = drugs.find(d => drugSlug(d) === requested);
+    const drug = getDrugList().bySlug.get(requested);
     if (!drug) {
       return res.status(404).type('text/html; charset=utf-8').send(
         renderLayout({
@@ -250,18 +302,19 @@ function createSeoRouter(db) {
         ? `An FDA-approved commercial generic (${drug.generic_name}) is available. Ask your pharmacist if automatic substitution applies to your prescription.`
         : `${displayName} (${drug.generic_name}) is currently available as brand-name only. Add it to your private Rx Savings Watch cabinet to get alerted when a generic launches.`;
 
+    // Strength-matched NADAC comparison only (same strength, form & pricing unit) — never averages
+    // across strengths, so the displayed gap cannot be inflated by mismatched products.
     const pricingLines = [];
-    if (drug.brand_nadac != null) {
-      pricingLines.push(`<div><strong>Brand Acquisition Benchmark (CMS NADAC):</strong> $${Number(drug.brand_nadac).toFixed(2)} / unit</div>`);
-    }
-    if (drug.generic_nadac != null) {
-      pricingLines.push(`<div><strong>Generic Acquisition Benchmark (CMS NADAC):</strong> $${Number(drug.generic_nadac).toFixed(2)} / unit</div>`);
-    }
-    if (drug.brand_nadac != null && drug.generic_nadac != null && Number(drug.brand_nadac) > Number(drug.generic_nadac)) {
-      const gapPct = ((Number(drug.brand_nadac) - Number(drug.generic_nadac)) / Number(drug.brand_nadac)) * 100;
-      if (gapPct > 0) {
-        pricingLines.push(`<div><strong>Estimated Brand vs. Generic Gap:</strong> ~${Math.round(gapPct)}%</div>`);
+    const matched = calculateMatchedSavings(getMarketRowsStmt.all(drug.id), { brandName: drug.brand_name });
+    if (matched.brandPrice != null && matched.genericPrice != null) {
+      const strengthLabel = describeMatchedKey(matched.matchedKey);
+      pricingLines.push(`<div><strong>Compared strength:</strong> ${escapeHtml(strengthLabel)}</div>`);
+      pricingLines.push(`<div><strong>Brand Acquisition Benchmark (CMS NADAC):</strong> $${matched.brandPrice.toFixed(2)} / unit</div>`);
+      pricingLines.push(`<div><strong>Generic Acquisition Benchmark (CMS NADAC):</strong> $${matched.genericPrice.toFixed(2)} / unit</div>`);
+      if (matched.savingsPct > 0) {
+        pricingLines.push(`<div><strong>Brand vs. Generic Acquisition Gap (same strength):</strong> ~${Math.round(matched.savingsPct)}%</div>`);
       }
+      pricingLines.push(`<div class="muted" style="font-size:12px;">NADAC is the average price pharmacies pay to acquire a drug, not the price you pay. Your actual cost depends on your pharmacy and coverage.</div>`);
     }
 
     const partnerButtons = partners.map(p => {

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/drug.dart';
@@ -1069,7 +1070,7 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
           ),
           const SizedBox(height: 12),
 
-          // Optional on-device 5-digit ZIP code (never sent to Rx Savings Watch servers)
+          // Optional on-device 5-digit ZIP code (only the bare ZIP is sent for the CMS NPI pharmacy lookup)
           Row(
             children: [
               SizedBox(
@@ -1159,9 +1160,10 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            'Sponsored Local Partner',
+                            // Paid placement disclosure: must stay clearly legible
+                            'Sponsored Local Partner (Ad)',
                             style: TextStyle(
-                              fontSize: 10.5,
+                              fontSize: 12.5,
                               fontWeight: FontWeight.bold,
                               color: theme.brightness == Brightness.dark ? Colors.white : Colors.indigo.shade900,
                             ),
@@ -1387,28 +1389,29 @@ class _DrugDetailScreenState extends State<DrugDetailScreen> {
                     ],
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    onPressed: () => ExternalNavService.openUrl(
-                      '${cabinet.serverUrl}/partners',
-                      sameTab: true,
-                    ),
-                    icon: const Icon(Icons.storefront_outlined, size: 15),
-                    label: const Text(
-                      'Own a pharmacy in this ZIP? Feature your cash prices →',
-                      style: TextStyle(fontSize: 12),
+              // B2B partner sign-up (Stripe checkout) is web-only — never linked from the Android app.
+              if (kIsWeb)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(48, 48),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                      onPressed: () => ExternalNavService.openUrl(
+                        '${cabinet.serverUrl}/partners',
+                        sameTab: true,
+                      ),
+                      icon: const Icon(Icons.storefront_outlined, size: 16),
+                      label: const Text(
+                        'Own a pharmacy in this ZIP? Feature your cash prices →',
+                        style: TextStyle(fontSize: 13),
+                      ),
                     ),
                   ),
                 ),
-              ),
             ] else ...[
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),

@@ -66,8 +66,8 @@ void main() {
         ),
       );
 
-      expect(find.text('No Personal Data Collected'), findsOneWidget);
-      await tester.tap(find.text('No Personal Data Collected'));
+      expect(find.text('No Account Needed • Private & Local'), findsOneWidget);
+      await tester.tap(find.text('No Account Needed • Private & Local'));
       await tester.pumpAndSettle();
 
       expect(find.text('Our Privacy Promise'), findsOneWidget);

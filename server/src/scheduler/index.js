@@ -24,6 +24,10 @@ class IngestionScheduler {
     this.nadacIntervalMs = options.nadacIntervalMs || 7 * 24 * 60 * 60 * 1000;
     this.rollingAuditIntervalMs = options.rollingAuditIntervalMs || 6 * 60 * 60 * 1000;
     this.rollingAuditBatchSize = options.rollingAuditBatchSize || 50;
+    // Rolling live audit hits external FDA/RxNorm/CMS APIs; disabled by default under NODE_ENV=test
+    this.enableRollingAudit = options.enableRollingAudit !== undefined
+      ? Boolean(options.enableRollingAudit)
+      : process.env.NODE_ENV !== 'test';
     
     this.timers = [];
     this.isRunning = false;
@@ -267,7 +271,7 @@ class IngestionScheduler {
     this.timers.push(nadacTimer);
 
     // Schedule Rolling Live FDA/RxNorm/CMS Database Audit (production/dev only)
-    if (process.env.NODE_ENV !== 'test') {
+    if (this.enableRollingAudit) {
       const rollingTimer = setInterval(() => {
         this.runRollingLiveAudit().catch(err => console.error('[Scheduler Rolling Audit Error]', err));
       }, this.rollingAuditIntervalMs);

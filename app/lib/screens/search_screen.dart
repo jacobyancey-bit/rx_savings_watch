@@ -145,7 +145,7 @@ class _SearchScreenState extends State<SearchScreen> {
           _allCatalogDrugs = updatedCatalog;
           _filteredDrugs = results;
           _isLiveSearching = false;
-          _liveSearchNote = 'Verified via official FDA, RxNorm & CMS databases.';
+          _liveSearchNote = 'Sourced from public FDA, RxNorm & CMS datasets.';
         });
 
         if (autoOpenFirst && mounted) {
@@ -161,14 +161,14 @@ class _SearchScreenState extends State<SearchScreen> {
       } else {
         setState(() {
           _isLiveSearching = false;
-          _liveSearchNote = 'No official FDA medication matched "$trimmed". Check spelling and try the brand or generic name.';
+          _liveSearchNote = 'No public FDA medication record matched "$trimmed". Check spelling and try the brand or generic name.';
         });
       }
     } catch (_) {
       if (!mounted || reqId != _liveSearchSeq) return;
       setState(() {
         _isLiveSearching = false;
-        _liveSearchNote = 'Could not reach official databases right now. Please try again.';
+        _liveSearchNote = 'Could not reach public medication databases right now. Please try again.';
       });
     }
   }

@@ -93,7 +93,7 @@ class DoctorHandoutSheet extends StatelessWidget {
 
   String _buildPrintableHtml() {
     final sources = drug.verificationSources.isNotEmpty
-        ? '<div class="row"><span class="label">Official Sources:</span> ${_escapeHtml(drug.verificationSources.join(' • '))}</div>'
+        ? '<div class="row"><span class="label">Public Data Sources:</span> ${_escapeHtml(drug.verificationSources.join(' • '))}</div>'
         : '';
     final dosageRow = _displayDosage.isNotEmpty
         ? '<div class="row"><span class="label">Dosage &amp; Form:</span> ${_escapeHtml(_displayDosage)}</div>'

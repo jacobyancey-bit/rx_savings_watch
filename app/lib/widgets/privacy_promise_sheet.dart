@@ -16,7 +16,7 @@ class PrivacyTrustBanner extends StatelessWidget {
     final textColor = isDark ? Colors.teal.shade100 : Colors.teal.shade900;
 
     return Semantics(
-      label: 'No personal data collected. Your medicine list stays only on this phone. Tap to learn how we protect your privacy.',
+      label: 'No account needed. Your medicine list stays only on this phone. Tap to learn how we protect your privacy.',
       button: true,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -41,7 +41,7 @@ class PrivacyTrustBanner extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'No Personal Data Collected',
+                          'No Account Needed • Private & Local',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
@@ -156,13 +156,13 @@ class PrivacyPromiseSheet extends StatelessWidget {
                 context,
                 icon: Icons.shuffle_outlined,
                 title: 'Anonymous Price & Generic Checks',
-                description: 'Searches and partner lookups are sent via POST bodies (never in URL query strings) and update checks mix in decoy common medicines. We use zero ad SDKs, zero analytics trackers, and zero cookies.',
+                description: 'Update checks send only public drug codes (no name, account, or device ID) via POST bodies, never in URL query strings, and add a few decoy common medicines. We use zero ad SDKs, zero analytics trackers, and zero cookies.',
               ),
               _buildPromiseRow(
                 context,
                 icon: Icons.location_off_outlined,
-                title: 'Optional ZIP Stays on Device',
-                description: 'If you enter a 5-digit ZIP code for local pharmacy coupons, it stays strictly in local device storage and is never sent to our servers. We never request GPS location or use geofencing.',
+                title: 'Optional ZIP, Never GPS',
+                description: 'If you enter a 5-digit ZIP code, it is saved on your device and only that ZIP (never your medication) is sent to look up licensed pharmacies in the public CMS NPI Registry. It is not stored or linked to you. We never request GPS location or use geofencing.',
               ),
               _buildPromiseRow(
                 context,

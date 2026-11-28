@@ -114,7 +114,8 @@ class RxSavingsWatchApp extends StatelessWidget {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-          side: const BorderSide(color: Color(0xFFC8D7D6)),
+          // >= 3:1 non-text contrast against white and canvas (WCAG 1.4.11)
+          side: const BorderSide(color: Color(0xFF728D8B)),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           textStyle: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: -0.1),
         ),
@@ -187,7 +188,9 @@ class RxSavingsWatchApp extends StatelessWidget {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-          side: const BorderSide(color: outline),
+          // >= 3:1 non-text contrast against dark surface and canvas (WCAG 1.4.11);
+          // the decorative card `outline` (#263534) is only ~1.3:1.
+          side: const BorderSide(color: Color(0xFF5A7371)),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           textStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),

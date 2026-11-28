@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server tests (Node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Deterministic, offline test run: disables live FDA/RxNorm/CMS discovery and rolling audits
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm --prefix server ci
+
+      - name: Run unit & integration tests
+        run: npm --prefix server test
+
+      - name: Dependency audit (production deps, high+)
+        run: npm --prefix server audit --omit=dev --audit-level=high
+
+  app:
+    name: Flutter analyze, test & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --fatal-infos
+
+      - name: Test
+        run: flutter test
+
+      - name: Build web (release)
+        run: flutter build web --release
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Debug-signed APK only: proves the Android build compiles without needing the upload keystore.
+      # Play App Bundles are built locally with android/key.properties (bundleRelease refuses the debug key).
+      - name: Build Android APK (debug)
+        run: flutter build apk --debug

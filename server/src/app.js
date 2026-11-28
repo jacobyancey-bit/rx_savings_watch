@@ -130,7 +130,7 @@ function createApp(db, options = {}) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="no-referrer">
-  <title>Rx Savings Watch â€” Privacy Policy | Dangling Dice Studiosâ„¢</title>
+  <title>Rx Savings Watch Ã¢â‚¬â€ Privacy Policy | Dangling Dice StudiosÃ¢â€žÂ¢</title>
   <style>
     :root {
       --brand: #0F5132;
@@ -320,7 +320,7 @@ function createApp(db, options = {}) {
     <h2>4. IP addresses and network information</h2>
     <p>Our server and hosting provider (Railway) receive your IP address when connecting. We use it only temporarily in memory for rate limiting, abuse prevention, and preventing duplicate counts of sponsored-pharmacy taps (up to 24h). We never store IP addresses in our database or link them to drug codes, searches, ZIP codes, or reviews.</p>
     <h2>5. Camera and the QR transfer scanner (Android)</h2>
-    <p>Camera images are processed on-device and never saved or uploaded by us. The scanner uses <strong>Google ML Kit</strong>, which may send diagnostic/usage info (device model, OS/app version, performance metrics, error codes, and a per-installation identifier) to Google only when you use the scanner (<a href="https://developers.google.com/ml-kit/android-data-disclosure" target="_blank" rel="noopener noreferrer">ML Kit data disclosure</a>). Cabinet transfer links (<code>â€¦/#import=â€¦</code>) keep drug codes in the URL <code>#</code> fragment, which browsers never send to any server.</p>
+    <p>Camera images are processed on-device and never saved or uploaded by us. The scanner uses <strong>Google ML Kit</strong>, which may send diagnostic/usage info (device model, OS/app version, performance metrics, error codes, and a per-installation identifier) to Google only when you use the scanner (<a href="https://developers.google.com/ml-kit/android-data-disclosure" target="_blank" rel="noopener noreferrer">ML Kit data disclosure</a>). Cabinet transfer links (<code>Ã¢â‚¬Â¦/#import=Ã¢â‚¬Â¦</code>) keep drug codes in the URL <code>#</code> fragment, which browsers never send to any server.</p>
     <h2>6. Website-only features</h2>
     <ul>
       <li><strong>Browser notifications (optional):</strong> Stores a push subscription endpoint/keys solely to send public generic-launch alerts (identical for everyone).</li>
@@ -328,15 +328,15 @@ function createApp(db, options = {}) {
       <li><strong>Pharmacy &amp; clinic partner program (businesses only):</strong> Business contact info, service ZIPs, optional NPI verification (CMS NPI Registry), and Stripe billing (we never receive full card details).</li>
     </ul>
     <h2>7. Advertising</h2>
-    <p>The app shows <strong>"Sponsored Local Partner (Ad)"</strong> listings for local pharmacies paying a flat monthly fee for specific ZIP codes, chosen only by ZIP â€” never by medications or user profiles. No ad networks, advertising IDs, or tracking.</p>
+    <p>The app shows <strong>"Sponsored Local Partner (Ad)"</strong> listings for local pharmacies paying a flat monthly fee for specific ZIP codes, chosen only by ZIP Ã¢â‚¬â€ never by medications or user profiles. No ad networks, advertising IDs, or tracking.</p>
     <h2>8. Links to other websites</h2>
     <p>External pharmacy/savings sites (GoodRx, SingleCare, Cost Plus Drugs, Amazon Pharmacy) and government sources are governed by their own privacy policies. We send no personal/device IDs and use <code>Referrer-Policy: no-referrer</code>. As an Amazon Associate, we earn from qualifying purchases.</p>
     <h2>9. Service providers and public data sources</h2>
     <p>Railway (hosting), Resend (review emails), Google ML Kit (Android QR scanner), Stripe (B2B partner billing), QR Server (partner counter flyer QR images), and public U.S. government data services (openFDA, Drugs@FDA, NLM RxNorm &amp; DailyMed, CMS NADAC, CMS NPI Registry). We never sell or rent personal information or share it for cross-context behavioral advertising.</p>
     <h2>10. Security, Retention, Deletion &amp; Your Rights</h2>
-    <p>All traffic uses HTTPS. On-device data stays until you erase it. Reviews stay until no longer needed or until you email <a href="mailto:support@danglingdicestudios.com">support@danglingdicestudios.com</a> to delete them (see <a href="/data-deletion">Data Deletion Instructions</a>). Depending on where you live (e.g., California, EU/UK), you may have rights to access, correct, or delete personal information â€” email us and we will respond within the time required by law.</p>
+    <p>All traffic uses HTTPS. On-device data stays until you erase it. Reviews stay until no longer needed or until you email <a href="mailto:support@danglingdicestudios.com">support@danglingdicestudios.com</a> to delete them (see <a href="/data-deletion">Data Deletion Instructions</a>). Depending on where you live (e.g., California, EU/UK), you may have rights to access, correct, or delete personal information Ã¢â‚¬â€ email us and we will respond within the time required by law.</p>
     <h2>11. Health Information, Children &amp; Contact</h2>
-    <p>Rx Savings Watch is a consumer information tool â€” not a HIPAA-covered entity or medical advice. Not directed to children under 13. Changes update the effective date above. Contact: Dangling Dice Studios&trade; â€” <a href="mailto:support@danglingdicestudios.com">support@danglingdicestudios.com</a>.</p>
+    <p>Rx Savings Watch is a consumer information tool Ã¢â‚¬â€ not a HIPAA-covered entity or medical advice. Not directed to children under 13. Changes update the effective date above. Contact: Dangling Dice Studios&trade; Ã¢â‚¬â€ <a href="mailto:support@danglingdicestudios.com">support@danglingdicestudios.com</a>.</p>
     <footer><a href="/">Rx Savings Watch</a> &middot; <a href="/data-deletion">Data Deletion</a> &middot; <a href="https://dangling-dice-studios.com/">Dangling Dice Studios&trade;</a></footer>
   </main>
 </body>
@@ -351,139 +351,7 @@ function createApp(db, options = {}) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="no-referrer">
-  <title>Data Deletion â€” Rx Savings Watch (Dangling Dice Studios)</title>
-  <style>
-    :root { --brand: #0F5132; --canvas: #FAF9F6; --surface: #FFFFFF; --ink: #11181C; --muted: #59636E; --border: #E5E4E0; --savings-bg: #ECFDF5; --savings-text: #065F46; --savings-border: #A7F3D0; --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: var(--sans); background: var(--canvas); color: var(--ink); line-height: 1.6; }
-    header { background: var(--canvas); border-bottom: 1px solid var(--border); padding: 14px 24px; }
-    .nav { max-width: 780px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; }
-    .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); font-weight: 600; font-size: 15px; }
-    .brand-mark { background: var(--brand); color: #fff; font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 5px; }
-    main { max-width: 780px; margin: 32px auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 32px 28px; }
-    h1 { margin-top: 0; color: var(--ink); font-size: 26px; letter-spacing: -0.02em; }
-    h2 { color: var(--brand); font-size: 17px; margin-top: 24px; }
-    .box { background: var(--savings-bg); border-left: 4px solid var(--brand); border-top: 1px solid var(--savings-border); border-right: 1px solid var(--savings-border); border-bottom: 1px solid var(--savings-border); color: var(--savings-text); border-radius: 6px; padding: 14px 16px; margin: 16px 0; font-size: 14px; }
-    a { color: var(--brand); font-weight: 600; }
-    footer { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--muted); }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="nav">
-      <a class="brand" href="/"><span class="brand-mark">RX</span><span>Rx Savings Watch</span></a>
-      <a href="/" style="font-size:13.5px;text-decoration:none;">&larr; Back to App</a>
-    </div>
-  </header>
-  <main>
-    <h1>Data Deletion Instructions</h1>
-    <p><strong>Developer:</strong> Dangling Dice Studios&trade; &nbsp;|&nbsp; <strong>App:</strong> Rx Savings Watch (Android &amp; Web)</p>
-    <div class="box"><strong>No User Accounts or Cloud Profiles:</strong> Rx Savings Watch does not create user accounts and does not store your medication cabinet, reminders, refill dates, or ZIP code on any remote server. All medication data stays strictly on your own device.</div>
-    <h2>1. Delete All On-Device App Data Immediately</h2>
-    <ol>
-      <li>Open <strong>Rx Savings Watch</strong>.</li>
-      <li>Go to <strong>Settings &rarr; Your Device Data</strong>.</li>
-      <li>Tap <strong>Erase My Medication List</strong> and confirm. This immediately and permanently deletes all saved medications, caregiver cabinets, refill dates, reminders, and local preferences from your device.</li>
-      <li>Alternatively, uninstalling the Android app (or clearing site data in your web browser) permanently deletes all local app data.</li>
-    </ol>
-    <h2>2. Delete Optional Web Push Subscriptions or Feedback</h2>
-    <ul>
-      <li><strong>Browser Push Alerts:</strong> Toggle off in <strong>Settings &rarr; Turn Off Browser Alerts</strong> to immediately remove your anonymous push endpoint from our server.</li>
-      <li><strong>In-App Feedback / Review Submissions:</strong> Email <a href="mailto:support@danglingdicestudios.com?subject=Rx%20Savings%20Watch%20Data%20Deletion%20Request">support@danglingdicestudios.com</a> with the date/details of your message and we will delete it within 7 days.</li>
-    </ul>
-    <h2>3. Data Retention Summary</h2>
-    <p>Transient network requests (anonymous medication lookups or 5-digit ZIP pharmacy lookups) are processed solely to return results and are not linked to any user profile. Aggregate daily server counters contain no personal identifiers, IP addresses, or medication names.</p>
-    <footer><a href="/">Return to Rx Savings Watch</a> &middot; <a href="/privacy">Privacy Policy</a> &middot; Contact: <a href="mailto:support@danglingdicestudios.com">support@danglingdicestudios.com</a></footer>
-  </main>
-</body>
-</html>`);
-  });
-
-  // Catch-all 404 for unknown /api/* routes (prevents info leakage)
-  app.use('/api', (req, res) => {
-    res.status(404).json({ error: 'Not Found' });
-  });
-
-  // Server-rendered SEO pages (/robots.txt, /sitemap.xml, /medications, /medications/:slug)
-  app.use('/', createSeoRouter(db));
-
-  // Serve Flutter Web App at '/' if built into server/public
-  const webPublicDir = path.join(__dirname, '..', 'public');
-  if (fs.existsSync(webPublicDir)) {
-    app.get('/', (req, res) => {
-      if (!isLikelyBot(req.get('user-agent'))) {
-        recordDailyMetric(db, 'web_visits');
-      }
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.sendFile(path.join(webPublicDir, 'index.html'));
-    });
-    app.use(express.static(webPublicDir, {
-      setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.html') || filePath.endsWith('rx_bottle_ocr.js') || filePath.endsWith('rx_push_bridge.js')) {
-          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        }
-      }
-    }));
-  }
-
-  // Error handling middleware
-  app.use((err, req, res, next) => {
-    console.error('Unhandled server error:', err);
-    res.status(500).json({ error: 'Internal Server Error' });
-  });
-
-  return app;
-}
-
-module.exports = {
-  createApp
-};
-      <tbody>
-        <tr><td><strong>Drug codes (RxNorm RxCUIs)</strong> + decoy common codes</td><td>Checking for updates</td><td>Return current FDA generic, shortage, and price info</td><td>No.</td></tr>
-        <tr><td><strong>Medication search terms</strong></td><td>Searching for a drug</td><td>Find the drug in catalog or public FDA/NLM databases</td><td>No. Search text is never saved.</td></tr>
-        <tr><td><strong>A drug code</strong></td><td>Opening savings options</td><td>Return pharmacy &amp; savings links</td><td>No.</td></tr>
-        <tr><td><strong>Data-quality reports</strong> (drug code + fixed issue category)</td><td>Only if you report a problem</td><td>Fix catalog errors</td><td>Yes, with no info about who sent it.</td></tr>
-        <tr><td><strong>Your 5-digit ZIP code</strong> (never your medication)</td><td>Only if you enter a ZIP</td><td>List licensed pharmacies from the public CMS NPI Registry</td><td>No. Results cached by ZIP up to 24h, not linked to you.</td></tr>
-        <tr><td><strong>Sponsored pharmacy taps</strong> (pharmacy + Call/Transfer/Website)</td><td>Tapping a sponsored listing</td><td>Give sponsoring pharmacies a total count of taps</td><td>Only as a running total per pharmacy.</td></tr>
-        <tr><td><strong>Reviews &amp; feedback</strong> (rating, category, message, platform)</td><td>Only if you submit a review</td><td>Read and respond to feedback</td><td>Yes. Stored privately &amp; emailed to support inbox via Resend. Never public.</td></tr>
-      </tbody>
-    </table>
-    <p><strong>Please do not include your name, contact details, or personal health details in a review message.</strong> We also keep plain daily aggregate counts (e.g., total searches/day) with no user information.</p>
-    <h2>4. IP addresses and network information</h2>
-    <p>Our server and hosting provider (Railway) receive your IP address when connecting. We use it only temporarily in memory for rate limiting, abuse prevention, and preventing duplicate counts of sponsored-pharmacy taps (up to 24h). We never store IP addresses in our database or link them to drug codes, searches, ZIP codes, or reviews.</p>
-    <h2>5. Camera and the QR transfer scanner (Android)</h2>
-    <p>Camera images are processed on-device and never saved or uploaded by us. The scanner uses <strong>Google ML Kit</strong>, which may send diagnostic/usage info (device model, OS/app version, performance metrics, error codes, and a per-installation identifier) to Google only when you use the scanner (<a href="https://developers.google.com/ml-kit/android-data-disclosure" target="_blank" rel="noopener noreferrer">ML Kit data disclosure</a>). Cabinet transfer links (<code>…/#import=…</code>) keep drug codes in the URL <code>#</code> fragment, which browsers never send to any server.</p>
-    <h2>6. Website-only features</h2>
-    <ul>
-      <li><strong>Browser notifications (optional):</strong> Stores a push subscription endpoint/keys solely to send public generic-launch alerts (identical for everyone).</li>
-      <li><strong>Tip jar:</strong> Handled by Buy Me a Coffee under its own privacy policy.</li>
-      <li><strong>Pharmacy &amp; clinic partner program (businesses only):</strong> Business contact info, service ZIPs, optional NPI verification (CMS NPI Registry), and Stripe billing (we never receive full card details).</li>
-    </ul>
-    <h2>7. Advertising</h2>
-    <p>The app shows <strong>"Sponsored Local Partner (Ad)"</strong> listings for local pharmacies paying a flat monthly fee for specific ZIP codes, chosen only by ZIP — never by medications or user profiles. No ad networks, advertising IDs, or tracking.</p>
-    <h2>8. Links to other websites</h2>
-    <p>External pharmacy/savings sites (GoodRx, SingleCare, Cost Plus Drugs, Amazon Pharmacy) and government sources are governed by their own privacy policies. We send no personal/device IDs and use <code>Referrer-Policy: no-referrer</code>. As an Amazon Associate, we earn from qualifying purchases.</p>
-    <h2>9. Service providers and public data sources</h2>
-    <p>Railway (hosting), Resend (review emails), Google ML Kit (Android QR scanner), Stripe (B2B partner billing), QR Server (partner counter flyer QR images), and public U.S. government data services (openFDA, Drugs@FDA, NLM RxNorm &amp; DailyMed, CMS NADAC, CMS NPI Registry). We never sell or rent personal information or share it for cross-context behavioral advertising.</p>
-    <h2>10. Security, Retention, Deletion &amp; Your Rights</h2>
-    <p>All traffic uses HTTPS. On-device data stays until you erase it. Reviews stay until no longer needed or until you email <a href="mailto:support@danglingdicestudios.com">support@danglingdicestudios.com</a> to delete them (see <a href="/data-deletion">Data Deletion Instructions</a>). Depending on where you live (e.g., California, EU/UK), you may have rights to access, correct, or delete personal information — email us and we will respond within the time required by law.</p>
-    <h2>11. Health Information, Children &amp; Contact</h2>
-    <p>Rx Savings Watch is a consumer information tool — not a HIPAA-covered entity or medical advice. Not directed to children under 13. Changes update the effective date above. Contact: Dangling Dice Studios&trade; — <a href="mailto:support@danglingdicestudios.com">support@danglingdicestudios.com</a>.</p>
-    <footer><a href="/">Rx Savings Watch</a> &middot; <a href="/data-deletion">Data Deletion</a> &middot; <a href="https://dangling-dice-studios.com/">Dangling Dice Studios&trade;</a></footer>
-  </main>
-</body>
-</html>`);
-  });
-
-  // Public Google Play Data Deletion instructions page (zero accounts / local-first storage)
-  app.get('/data-deletion', (req, res) => {
-    res.type('text/html; charset=utf-8').send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="referrer" content="no-referrer">
-  <title>Data Deletion — Rx Savings Watch (Dangling Dice Studios)</title>
+  <title>Data Deletion Ã¢â‚¬â€ Rx Savings Watch (Dangling Dice Studios)</title>
   <style>
     :root { --brand: #0F5132; --canvas: #FAF9F6; --surface: #FFFFFF; --ink: #11181C; --muted: #59636E; --border: #E5E4E0; --savings-bg: #ECFDF5; --savings-text: #065F46; --savings-border: #A7F3D0; --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     * { box-sizing: border-box; }

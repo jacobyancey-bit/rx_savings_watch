@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/cabinet_provider.dart';
 import 'screens/home_screen.dart';
+import 'services/subscription_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +17,7 @@ class RxSavingsWatchApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => CabinetProvider()),
+        ChangeNotifierProvider(create: (_) => SubscriptionService()..init()),
       ],
       child: Consumer<CabinetProvider>(
         builder: (context, cabinet, _) {

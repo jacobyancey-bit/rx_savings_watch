@@ -6,6 +6,7 @@ import '../config/partner_links.dart';
 import '../providers/cabinet_provider.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import '../services/subscription_service.dart';
 import '../services/web_push_service.dart';
 import '../widgets/legal_policy_sheet.dart';
 import '../widgets/privacy_promise_sheet.dart';
@@ -431,6 +432,132 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+
+          // Rx Savings Watch Plus (Google Play / App Store via RevenueCat — mobile only)
+          if (!kIsWeb) ...[
+            const SizedBox(height: 28),
+            Builder(
+              builder: (context) {
+                final sub = context.watch<SubscriptionService?>();
+                if (sub == null || !sub.isSupported) return const SizedBox.shrink();
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: sub.isCaregiverPlus
+                          ? Colors.teal.shade400
+                          : theme.colorScheme.outlineVariant,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            sub.isCaregiverPlus
+                                ? Icons.workspace_premium
+                                : Icons.workspace_premium_outlined,
+                            color: Colors.teal.shade700,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Rx Savings Watch Plus',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: sub.isCaregiverPlus
+                                  ? Colors.teal.shade700
+                                  : theme.colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              sub.isCaregiverPlus ? 'Active' : 'Free Plan',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: sub.isCaregiverPlus
+                                    ? Colors.white
+                                    : theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        sub.isCaregiverPlus
+                            ? 'Thank you for supporting independent, privacy-first software! Caregiver Plus is active on this device.'
+                            : 'Unlock unlimited caregiver family cabinets, priority generic & shortage alerts, and support independent privacy-first software.',
+                        style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 8,
+                        children: [
+                          if (!sub.isCaregiverPlus)
+                            FilledButton.icon(
+                              onPressed: sub.isBusy
+                                  ? null
+                                  : () async {
+                                      final res = await sub.presentPaywall();
+                                      if (context.mounted && res.message != null) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text(res.message!)),
+                                        );
+                                      }
+                                    },
+                              icon: const Icon(Icons.star_outline_rounded, size: 18),
+                              label: const Text('Upgrade to Caregiver Plus'),
+                            )
+                          else
+                            FilledButton.tonalIcon(
+                              onPressed: sub.isBusy
+                                  ? null
+                                  : () async {
+                                      final err = await sub.presentCustomerCenter();
+                                      if (context.mounted && err != null) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text(err)),
+                                        );
+                                      }
+                                    },
+                              icon: const Icon(Icons.manage_accounts_outlined, size: 18),
+                              label: const Text('Manage Subscription'),
+                            ),
+                          OutlinedButton.icon(
+                            onPressed: sub.isBusy
+                                ? null
+                                : () async {
+                                    final res = await sub.restorePurchases();
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text(res.message)),
+                                      );
+                                    }
+                                  },
+                            icon: const Icon(Icons.restore_rounded, size: 18),
+                            label: const Text('Restore Purchases'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
 
           // Quiet, Optional Tip Jar (Web-only to comply with Google Play Payments Policy on Android)
           if (kIsWeb) ...[
